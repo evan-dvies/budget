@@ -188,7 +188,14 @@ export function cleanDescription(raw: string): string {
     s = words.join(' ').trim();
   }
 
-  return s.replace(/[\s\-,.]+$/, '').trim();
+  s = s.replace(/[\s\-,.]+$/, '').trim();
+
+  // Noise prefixes are meant to strip a boilerplate lead-in before a merchant
+  // name, not the whole description. If nothing's left (e.g. SimpleFIN's bare
+  // "Interac purchase" with no merchant detail), fall back to the original.
+  if (!s) return raw.toUpperCase().replace(/\s+/g, ' ').trim();
+
+  return s;
 }
 
 /**

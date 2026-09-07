@@ -1,12 +1,56 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
+interface Account {
+  id: string;
+  name: string;
+  institution: string;
+  currency: string;
+  current_balance: string | null;
+  balance_as_of: string | null;
+}
+
+interface Transaction {
+  id: string;
+  account_id: string;
+  account_name: string;
+  posted_date: string;
+  amount: string;
+  currency: string;
+  description_clean: string;
+  description_raw: string;
+  pending: boolean;
+}
 
 export default function DashboardPage() {
   const [setupToken, setSetupToken] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [status, setStatus] = useState('');
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
+
+  async function loadDashboard() {
+    setLoadingData(true);
+    try {
+      const res = await fetch('/api/dashboard');
+      const data = await res.json();
+      if (data.ok) {
+        setAccounts(data.accounts);
+        setTransactions(data.transactions);
+      }
+    } catch {
+      // Leave whatever was already loaded in place.
+    } finally {
+      setLoadingData(false);
+    }
+  }
+
+  useEffect(() => {
+    loadDashboard();
+  }, []);
 
   async function connectSimpleFin() {
     if (!setupToken.trim()) return;
@@ -43,6 +87,7 @@ export default function DashboardPage() {
       const data = await res.json();
       if (data.ok) {
         setStatus(`Synced! ${data.added} transaction(s) imported across ${data.accounts} account(s).`);
+        await loadDashboard();
       } else {
         setStatus(`Sync error: ${data.error}`);
       }
@@ -72,6 +117,21 @@ export default function DashboardPage() {
     cursor: active ? 'pointer' : 'not-allowed',
   } as React.CSSProperties);
 
+  function formatMoney(amount: string | null, currency: string) {
+    if (amount === null) return '—';
+    const n = Number(amount);
+    const formatted = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const sign = n < 0 ? '-' : '';
+    return `${sign}${currency === 'USD' ? '$' : currency === 'CAD' ? 'CA$' : currency + ' '}${formatted}`;
+  }
+
+  function formatDate(dateStr: string) {
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+
   return (
     <main style={{
       minHeight: '100vh',
@@ -88,6 +148,44 @@ export default function DashboardPage() {
         }}>💰</div>
         <h1 style={{ color: '#fff', fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Budget</h1>
       </div>
+
+      {/* Accounts */}
+      {accounts.length > 0 && (
+        <div style={cardStyle}>
+          <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: '0 0 1rem' }}>
+            Accounts
+          </h2>
+          {accounts.map((a) => {
+            const balance = a.current_balance === null ? 0 : Number(a.current_balance);
+            return (
+              <div key={a.id} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '0.6rem 0', borderBottom: '1px solid #2a2a2a',
+              }}>
+                <div>
+                  <div style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 500 }}>{a.name}</div>
+                  <div style={{ color: '#666', fontSize: '0.75rem' }}>{a.institution}</div>
+                </div>
+                <div style={{
+                  color: balance < 0 ? '#ef4444' : '#22c55e',
+                  fontSize: '0.95rem',
+                  fontWeight: 600,
+                }}>
+                  {formatMoney(a.current_balance, a.currency)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!loadingData && accounts.length === 0 && (
+        <div style={cardStyle}>
+          <p style={{ color: '#666', fontSize: '0.85rem', margin: 0, textAlign: 'center' }}>
+            No accounts yet. Connect a bank below, or check "Sync Transactions Now" if you've already connected one.
+          </p>
+        </div>
+      )}
 
       {/* SimpleFIN Setup */}
       <div style={cardStyle}>
@@ -138,12 +236,53 @@ export default function DashboardPage() {
       </div>
 
       {status && (
-        <p style={{ color: '#22c55e', fontSize: '0.9rem', textAlign: 'center', marginTop: '1rem' }}>
+        <p style={{ color: '#22c55e', fontSize: '0.9rem', textAlign: 'center', marginTop: '1rem', marginBottom: '1rem' }}>
           {status}
         </p>
       )}
 
-      <div style={{ marginTop: '2rem' }}>
+      {/* Recent transactions */}
+      {transactions.length > 0 && (
+        <div style={cardStyle}>
+          <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: '0 0 1rem' }}>
+            Recent Transactions
+          </h2>
+          {transactions.map((t) => {
+            const amount = Number(t.amount);
+            return (
+              <div key={t.id} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '0.5rem 0', borderBottom: '1px solid #2a2a2a', gap: '0.75rem',
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    color: '#fff', fontSize: '0.85rem', fontWeight: 500,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>
+                    {t.description_clean || t.description_raw}
+                    {t.pending && (
+                      <span style={{ color: '#eab308', fontSize: '0.7rem', marginLeft: '0.4rem' }}>PENDING</span>
+                    )}
+                  </div>
+                  <div style={{ color: '#666', fontSize: '0.75rem' }}>
+                    {formatDate(t.posted_date)} · {t.account_name}
+                  </div>
+                </div>
+                <div style={{
+                  color: amount < 0 ? '#ef4444' : '#22c55e',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                }}>
+                  {formatMoney(t.amount, t.currency)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ marginTop: '1rem' }}>
         <a href="/api/health" style={{ color: '#444', fontSize: '0.8rem' }}>
           Check database →
         </a>
