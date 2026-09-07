@@ -65,6 +65,9 @@ export default function DashboardPage() {
   const [monthTotals, setMonthTotals] = useState<MonthTotals>({ spent: '0', income: '0' });
   const [loadingData, setLoadingData] = useState(true);
   const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
+  const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
+  const [budgetInput, setBudgetInput] = useState('');
+  const [savingBudget, setSavingBudget] = useState(false);
 
   async function loadDashboard() {
     setLoadingData(true);
@@ -146,6 +149,33 @@ export default function DashboardPage() {
       await loadDashboard();
     } catch {
       setStatus('Could not update category. Try again.');
+    }
+  }
+
+  async function saveBudgetLimit(categoryId: string) {
+    const amount = Number(budgetInput);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setStatus('Enter a valid amount greater than 0.');
+      return;
+    }
+    setSavingBudget(true);
+    try {
+      const res = await fetch(`/api/budgets/${categoryId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setEditingBudgetId(null);
+        await loadDashboard();
+      } else {
+        setStatus(`Error: ${data.error}`);
+      }
+    } catch {
+      setStatus('Could not update budget. Try again.');
+    } finally {
+      setSavingBudget(false);
     }
   }
 
@@ -240,17 +270,64 @@ export default function DashboardPage() {
             const limit = Number(b.amount);
             const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
             const color = budgetColor(spent, limit);
+            const isEditing = editingBudgetId === b.category_id;
             return (
               <div key={b.category_id} style={{ marginBottom: '0.9rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
-                  <span style={{ color: '#fff', fontSize: '0.85rem', fontWeight: 500 }}>{b.category_name}</span>
-                  <span style={{ color, fontSize: '0.8rem', fontWeight: 600 }}>
-                    {formatMoney(spent)} / {formatMoney(limit)}
-                  </span>
+                <div
+                  onClick={() => {
+                    if (isEditing) return;
+                    setEditingBudgetId(b.category_id);
+                    setBudgetInput(String(limit));
+                  }}
+                  style={{ cursor: isEditing ? 'default' : 'pointer' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                    <span style={{ color: '#fff', fontSize: '0.85rem', fontWeight: 500 }}>{b.category_name}</span>
+                    <span style={{ color, fontSize: '0.8rem', fontWeight: 600 }}>
+                      {formatMoney(spent)} / {formatMoney(limit)}
+                    </span>
+                  </div>
+                  <div style={{ height: 6, background: BORDER, borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3 }} />
+                  </div>
                 </div>
-                <div style={{ height: 6, background: BORDER, borderRadius: 3, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3 }} />
-                </div>
+                {isEditing && (
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <input
+                      autoFocus
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={budgetInput}
+                      onChange={(e) => setBudgetInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && saveBudgetLimit(b.category_id)}
+                      style={{
+                        flex: 1, padding: '0.5rem', borderRadius: 8, border: `1px solid ${BORDER}`,
+                        background: '#111', color: '#fff', fontSize: '0.85rem', boxSizing: 'border-box',
+                      }}
+                    />
+                    <button
+                      onClick={() => saveBudgetLimit(b.category_id)}
+                      disabled={savingBudget}
+                      style={{
+                        padding: '0.5rem 0.9rem', borderRadius: 8, border: 'none',
+                        background: GREEN, color: '#000', fontSize: '0.85rem', fontWeight: 600,
+                        cursor: savingBudget ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingBudgetId(null)}
+                      style={{
+                        padding: '0.5rem 0.9rem', borderRadius: 8, border: `1px solid ${BORDER}`,
+                        background: 'none', color: MUTED, fontSize: '0.85rem', cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
