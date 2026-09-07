@@ -10,18 +10,17 @@
     "test": "npx esbuild test/normalize.test.ts --bundle --platform=node --format=cjs --outfile=/tmp/budget-test.cjs && node /tmp/budget-test.cjs"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^0.10.4",
-    "jose": "^6.2.8",
+    "@neondatabase/serverless": "^1.1.0",
+    "jose": "^6.2.10",
     "next": "^15.1.0",
-    "plaid": "^45.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "@types/react": "^19.0.0",
+    "@types/node": "26.4.0",
+    "@types/react": "19.2.18",
     "dotenv": "^16.4.5",
     "esbuild": "^0.28.1",
-    "typescript": "^5.7.0"
+    "typescript": "^5.9.3"
   }
 }

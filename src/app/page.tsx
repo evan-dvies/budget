@@ -2,62 +2,30 @@
 
 import { useState } from 'react';
 
-declare global {
-  interface Window { Plaid: any; }
-}
-
 export default function DashboardPage() {
-  const [connecting, setConnecting] = useState(false);
+  const [setupToken, setSetupToken] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [status, setStatus] = useState('');
 
-  async function connectBank() {
+  async function connectSimpleFin() {
+    if (!setupToken.trim()) return;
     setConnecting(true);
     setStatus('');
     try {
-      // 1. Get a link token from our API
-      const res = await fetch('/api/plaid/create-link-token', { method: 'POST' });
-      const { link_token, error } = await res.json();
-      if (error) { setStatus('Could not start bank connection. Check your Plaid keys.'); return; }
-
-      // 2. Load Plaid Link script if not already loaded
-      if (!window.Plaid) {
-        await new Promise<void>((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js';
-          script.onload = () => resolve();
-          script.onerror = () => reject();
-          document.head.appendChild(script);
-        });
-      }
-
-      // 3. Open Plaid Link
-      const handler = window.Plaid.create({
-        token: link_token,
-        onSuccess: async (public_token: string, metadata: any) => {
-          setStatus('Saving connection...');
-          const exchangeRes = await fetch('/api/plaid/exchange-token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              public_token,
-              institution_name: metadata?.institution?.name,
-            }),
-          });
-          const result = await exchangeRes.json();
-          if (result.ok) {
-            setStatus('Bank connected! Syncing transactions...');
-            await syncNow();
-          } else {
-            setStatus('Connection saved but sync failed. Try syncing manually.');
-          }
-        },
-        onExit: () => {
-          setStatus('');
-          setConnecting(false);
-        },
+      const res = await fetch('/api/simplefin/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ setup_token: setupToken.trim() }),
       });
-      handler.open();
+      const data = await res.json();
+      if (data.ok) {
+        setStatus('Connected! Syncing transactions...');
+        setSetupToken('');
+        await syncNow();
+      } else {
+        setStatus(`Error: ${data.error}`);
+      }
     } catch {
       setStatus('Something went wrong. Try again.');
     } finally {
@@ -68,16 +36,15 @@ export default function DashboardPage() {
   async function syncNow() {
     setSyncing(true);
     try {
-      const res = await fetch('/api/plaid/sync', {
+      const res = await fetch('/api/simplefin/sync', {
         method: 'POST',
         headers: { 'x-internal': 'true' },
       });
       const data = await res.json();
       if (data.ok) {
-        const total = data.results.reduce((sum: number, r: any) => sum + (r.added ?? 0), 0);
-        setStatus(`Synced! ${total} new transaction(s) imported.`);
+        setStatus(`Synced! ${data.added} transaction(s) imported across ${data.accounts} account(s).`);
       } else {
-        setStatus('Sync failed. Check Vercel logs.');
+        setStatus(`Sync error: ${data.error}`);
       }
     } catch {
       setStatus('Sync failed. Try again.');
@@ -85,6 +52,25 @@ export default function DashboardPage() {
       setSyncing(false);
     }
   }
+
+  const cardStyle = {
+    background: '#1a1a1a',
+    borderRadius: 16,
+    padding: '1.5rem',
+    marginBottom: '1rem',
+  };
+
+  const btnStyle = (active: boolean, color = '#22c55e') => ({
+    width: '100%',
+    padding: '0.875rem',
+    borderRadius: 10,
+    border: 'none',
+    background: active ? color : '#2a2a2a',
+    color: active ? '#000' : '#555',
+    fontSize: '1rem',
+    fontWeight: 600,
+    cursor: active ? 'pointer' : 'not-allowed',
+  } as React.CSSProperties);
 
   return (
     <main style={{
@@ -103,42 +89,51 @@ export default function DashboardPage() {
         <h1 style={{ color: '#fff', fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Budget</h1>
       </div>
 
-      <div style={{
-        background: '#1a1a1a', borderRadius: 16, padding: '1.5rem', marginBottom: '1rem',
-      }}>
-        <p style={{ color: '#888', fontSize: '0.9rem', margin: '0 0 1rem' }}>
-          Connect your bank account to start tracking transactions automatically.
+      {/* SimpleFIN Setup */}
+      <div style={cardStyle}>
+        <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
+          Connect Bank via SimpleFIN
+        </h2>
+        <p style={{ color: '#666', fontSize: '0.85rem', margin: '0 0 1rem' }}>
+          Paste your SimpleFIN setup token from beta-bridge.simplefin.org
         </p>
-        <button
-          onClick={connectBank}
-          disabled={connecting}
+        <input
+          type="password"
+          value={setupToken}
+          onChange={(e) => setSetupToken(e.target.value)}
+          placeholder="Paste setup token..."
           style={{
-            width: '100%', padding: '0.875rem', borderRadius: 10, border: 'none',
-            background: connecting ? '#2a2a2a' : '#22c55e',
-            color: connecting ? '#555' : '#000',
-            fontSize: '1rem', fontWeight: 600,
-            cursor: connecting ? 'not-allowed' : 'pointer',
+            width: '100%',
+            padding: '0.75rem 1rem',
+            borderRadius: 10,
+            border: '1.5px solid #2a2a2a',
+            background: '#111',
+            color: '#fff',
+            fontSize: '0.9rem',
+            boxSizing: 'border-box',
+            marginBottom: '0.75rem',
+            outline: 'none',
           }}
+        />
+        <button
+          onClick={connectSimpleFin}
+          disabled={connecting || !setupToken.trim()}
+          style={btnStyle(!connecting && !!setupToken.trim())}
         >
-          {connecting ? 'Opening...' : '+ Connect Bank Account'}
+          {connecting ? 'Connecting...' : 'Connect'}
         </button>
       </div>
 
-      <div style={{
-        background: '#1a1a1a', borderRadius: 16, padding: '1.5rem', marginBottom: '1rem',
-      }}>
+      {/* Manual sync */}
+      <div style={cardStyle}>
         <button
           onClick={syncNow}
           disabled={syncing}
-          style={{
-            width: '100%', padding: '0.875rem', borderRadius: 10, border: 'none',
-            background: syncing ? '#2a2a2a' : '#1e3a2f',
-            color: syncing ? '#555' : '#22c55e',
-            fontSize: '1rem', fontWeight: 600,
-            cursor: syncing ? 'not-allowed' : 'pointer',
-          }}
+          style={btnStyle(!syncing, '#1e3a2f')}
         >
-          {syncing ? 'Syncing...' : '↻ Sync Transactions Now'}
+          <span style={{ color: syncing ? '#555' : '#22c55e' }}>
+            {syncing ? 'Syncing...' : '↻ Sync Transactions Now'}
+          </span>
         </button>
       </div>
 
