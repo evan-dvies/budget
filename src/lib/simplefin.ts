@@ -69,7 +69,18 @@ export async function fetchAccounts(
   url.searchParams.set('start-date', String(Math.floor(new Date(startDate).getTime() / 1000)));
   url.searchParams.set('end-date', String(Math.floor(new Date(endDate).getTime() / 1000)));
 
-  const res = await fetch(url.toString());
+  // fetch() refuses to construct a Request from a URL with embedded
+  // credentials, so pull them out and send Basic Auth instead.
+  const username = decodeURIComponent(url.username);
+  const password = decodeURIComponent(url.password);
+  url.username = '';
+  url.password = '';
+
+  const headers: HeadersInit = username || password
+    ? { Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}` }
+    : {};
+
+  const res = await fetch(url.toString(), { headers });
   if (!res.ok) {
     throw new Error(`SimpleFIN fetch failed: ${res.status} ${await res.text()}`);
   }
