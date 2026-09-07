@@ -288,3 +288,33 @@ CREATE TABLE IF NOT EXISTS simplefin_access (
     last_synced_at  TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ---------------------------------------------------------------------------
+-- Categorization & budgets (added after SimpleFIN migration)
+-- ---------------------------------------------------------------------------
+
+-- Full timestamp (SimpleFIN gives one; posted_date alone can't support
+-- time-of-day rules like "late-night rideshare = going out, not commuting").
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ;
+
+-- Amount-gated rules (e.g. a large e-transfer is probably a rent payment).
+ALTER TABLE category_rules ADD COLUMN IF NOT EXISTS min_abs_amount NUMERIC(12,2);
+
+-- category_source didn't have a value for "the AI categorizer guessed this,
+-- treat it as low-confidence" -- same precedence tier as 'plaid'/'uncategorized',
+-- always overridable by a real rule or a manual pick.
+ALTER TYPE category_source ADD VALUE IF NOT EXISTS 'ai';
+
+-- Every AI categorization gets cached as a new rule keyed on the exact
+-- description, so the same merchant never hits the API twice.
+CREATE UNIQUE INDEX IF NOT EXISTS category_rules_ai_cache_key
+    ON category_rules (pattern)
+    WHERE match_field = 'description_clean' AND match_type = 'equals';
+
+-- Dedup key for curated (non-AI-cached) rules so re-seeding is idempotent.
+CREATE UNIQUE INDEX IF NOT EXISTS category_rules_pattern_category_key
+    ON category_rules (pattern, category_id);
+
+-- Categories, category_rules, and budgets are seeded by
+-- scripts/seed-budget-system.mjs rather than inline here, since the seed
+-- data references category ids that only exist after insertion.

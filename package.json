@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "migrate": "node -r dotenv/config scripts/migrate.mjs",
+    "seed:budget": "node -r dotenv/config scripts/seed-budget-system.mjs dotenv_config_path=.env.local",
     "test": "npx esbuild test/normalize.test.ts --bundle --platform=node --format=cjs --outfile=/tmp/budget-test.cjs && node /tmp/budget-test.cjs"
   },
   "dependencies": {

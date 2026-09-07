@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { fetchAccounts, parseAmount } from '@/lib/simplefin';
 import { cleanDescription } from '@/lib/import/normalize';
 import { fingerprintOf } from '@/lib/import/fingerprint';
+import { categorizeWithContext, loadCategorizationContext } from '@/lib/categorize';
 
 export async function POST(request: Request) {
   const auth = request.headers.get('authorization');
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
 
     let totalAdded = 0;
     let totalSkipped = 0;
+    const { rules, leafCategories } = await loadCategorizationContext();
 
     for (const sfAccount of accounts) {
       // Upsert the account
@@ -61,7 +63,8 @@ export async function POST(request: Request) {
       if (!accountId) continue;
 
       for (const txn of sfAccount.transactions) {
-        const postedDate = new Date(txn.posted * 1000).toISOString().split('T')[0];
+        const postedAt = new Date(txn.posted * 1000);
+        const postedDate = postedAt.toISOString().split('T')[0];
         const amount = parseAmount(txn.amount);
         const descriptionClean = cleanDescription(txn.description);
         const fingerprint = fingerprintOf({
@@ -72,19 +75,22 @@ export async function POST(request: Request) {
         });
 
         try {
-          await db.query(
+          const { rows: txnRows } = await db.query<{ id: string; category_source: string }>(
             `INSERT INTO transactions
-               (account_id, posted_date, amount, currency,
+               (account_id, posted_date, posted_at, amount, currency,
                 description_raw, description_clean, pending,
                 source, external_id, fingerprint, fingerprint_seq)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, 'simplefin', $8, $9, 0)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'simplefin', $9, $10, 0)
              ON CONFLICT (external_id) WHERE external_id IS NOT NULL DO UPDATE
                SET amount      = EXCLUDED.amount,
                    pending     = EXCLUDED.pending,
-                   posted_date = EXCLUDED.posted_date`,
+                   posted_date = EXCLUDED.posted_date,
+                   posted_at   = EXCLUDED.posted_at
+             RETURNING id, category_source`,
             [
               accountId,
               postedDate,
+              postedAt.toISOString(),
               amount,
               sfAccount.currency ?? 'CAD',
               txn.description,
@@ -95,6 +101,27 @@ export async function POST(request: Request) {
             ],
           );
           totalAdded++;
+
+          const inserted = txnRows[0];
+          if (inserted && inserted.category_source !== 'manual') {
+            try {
+              await categorizeWithContext(
+                {
+                  id: inserted.id,
+                  account_id: accountId,
+                  description_raw: txn.description,
+                  description_clean: descriptionClean,
+                  merchant_name: null,
+                  amount: String(amount),
+                  posted_at: postedAt.toISOString(),
+                },
+                rules,
+                leafCategories,
+              );
+            } catch (categorizeErr) {
+              console.error('Categorization failed for transaction', inserted.id, (categorizeErr as Error).message);
+            }
+          }
         } catch {
           totalSkipped++;
         }
