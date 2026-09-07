@@ -42,8 +42,8 @@ export async function POST(request: Request) {
       // Upsert the account
       const { rows: acctRows } = await db.query<{ id: string }>(
         `INSERT INTO accounts
-           (name, institution, type, currency, current_balance, balance_as_of, source)
-         VALUES ($1, $2, 'depository', $3, $4, NOW(), 'simplefin')
+           (name, institution, type, currency, current_balance, balance_as_of, source, simplefin_account_id)
+         VALUES ($1, $2, 'depository', $3, $4, NOW(), 'simplefin', $5)
          ON CONFLICT (simplefin_account_id) DO UPDATE
            SET current_balance = EXCLUDED.current_balance,
                balance_as_of   = NOW()
@@ -53,13 +53,8 @@ export async function POST(request: Request) {
           sfAccount.org?.name ?? 'Unknown',
           sfAccount.currency ?? 'CAD',
           parseAmount(sfAccount.balance),
+          sfAccount.id,
         ],
-      );
-
-      // If this is a new account, store the SimpleFIN ID
-      await db.query(
-        `UPDATE accounts SET simplefin_account_id = $1 WHERE id = $2 AND simplefin_account_id IS NULL`,
-        [sfAccount.id, acctRows[0]?.id],
       );
 
       const accountId = acctRows[0]?.id;
@@ -83,7 +78,7 @@ export async function POST(request: Request) {
                 description_raw, description_clean, pending,
                 source, external_id, fingerprint, fingerprint_seq)
              VALUES ($1, $2, $3, $4, $5, $6, $7, 'simplefin', $8, $9, 0)
-             ON CONFLICT (external_id) DO UPDATE
+             ON CONFLICT (external_id) WHERE external_id IS NOT NULL DO UPDATE
                SET amount      = EXCLUDED.amount,
                    pending     = EXCLUDED.pending,
                    posted_date = EXCLUDED.posted_date`,
