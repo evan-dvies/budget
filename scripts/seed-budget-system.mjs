@@ -109,6 +109,27 @@ async function main() {
     { priority: 30, pattern: 'GNC|POPEYES SUPPLEMENTS|SUPPLEMENT KING', type: 'regex', category: 'Supplements' },
     { priority: 30, pattern: 'GOODLIFE|ANYTIME FITNESS|PLANET FITNESS|YMCA', type: 'regex', category: 'Gym' },
     { priority: 30, pattern: 'AMAZON|AMZN', type: 'regex', category: 'Amazon/Online' },
+
+    // Added after reviewing real uncategorized transactions -- confident
+    // single-purpose merchants/keywords, not a guess at ambiguous ones
+    // (liquor stores, WestJet, generic .com retailers, etc. left alone).
+    { priority: 30, pattern: 'CALGARY TRANSIT', type: 'contains', category: 'Transit' },
+    { priority: 30, pattern: 'PARKING', type: 'contains', category: 'Parking' },
+    { priority: 30, pattern: 'INDIGO PARK', type: 'contains', category: 'Parking' },
+    { priority: 30, pattern: "MCDONALD|SUBWAY|WENDY'S|QUESADA", type: 'regex', category: 'Dining Out' },
+    { priority: 30, pattern: 'PNE FOOD|PNE EXTERNAL FOOD', type: 'regex', category: 'Dining Out' },
+    { priority: 30, pattern: 'DONUT', type: 'contains', category: 'Coffee' },
+    { priority: 30, pattern: "NAT'S COFFEE", type: 'contains', category: 'Coffee' },
+    { priority: 30, pattern: 'PUB|BREWERY|BREWING|SALOON|TAVERN|TAP & BARREL', type: 'regex', category: 'Bars/Nightlife' },
+    { priority: 30, pattern: 'SEATGEEK|TICKETLEADER|TICKETMASTER', type: 'regex', category: 'Entertainment' },
+    { priority: 30, pattern: 'CASCADES CASINO|OAK VIEW GROUP', type: 'regex', category: 'Entertainment' },
+    { priority: 30, pattern: 'FOOT LOCKER', type: 'contains', category: 'Clothing' },
+    { priority: 30, pattern: 'LULULEMON', type: 'contains', category: 'Clothing' },
+    { priority: 30, pattern: 'DOLLARAMA', type: 'contains', category: 'General Shopping' },
+    { priority: 30, pattern: 'FRAGRANCENET', type: 'contains', category: 'General Shopping' },
+    { priority: 30, pattern: 'CRUNCHYROLL', type: 'contains', category: 'Streaming' },
+    { priority: 30, pattern: 'ANTHROPIC', type: 'contains', category: 'Other Subscriptions' },
+    { priority: 30, pattern: 'APPLE\\.COM/BILL', type: 'regex', category: 'Other Subscriptions' },
   ];
 
   for (const r of rules) {

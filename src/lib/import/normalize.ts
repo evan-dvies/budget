@@ -188,7 +188,7 @@ export function cleanDescription(raw: string): string {
     s = words.join(' ').trim();
   }
 
-  s = s.replace(/[\s\-,.]+$/, '').trim();
+  s = s.replace(/^[\s\-,.]+|[\s\-,.]+$/g, '').trim();
 
   // Noise prefixes are meant to strip a boilerplate lead-in before a merchant
   // name, not the whole description. If nothing's left (e.g. SimpleFIN's bare
