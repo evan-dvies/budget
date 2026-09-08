@@ -44,6 +44,13 @@ interface MonthTotals {
   income: string;
 }
 
+interface ChartSpec {
+  type: 'bar' | 'pie';
+  title: string;
+  labels: string[];
+  values: number[];
+}
+
 const BG = '#0f0f0f';
 const CARD = '#1a1a1a';
 const BORDER = '#2a2a2a';
@@ -69,6 +76,12 @@ export default function DashboardPage() {
   const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
   const [budgetInput, setBudgetInput] = useState('');
   const [savingBudget, setSavingBudget] = useState(false);
+
+  const [showAskAI, setShowAskAI] = useState(false);
+  const [aiQuestion, setAiQuestion] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiResult, setAiResult] = useState<{ answer: string; chart: ChartSpec | null } | null>(null);
 
   async function loadDashboard() {
     setLoadingData(true);
@@ -180,6 +193,30 @@ export default function DashboardPage() {
     }
   }
 
+  async function askAI(preset?: string) {
+    if (!preset && !aiQuestion.trim()) return;
+    setAiLoading(true);
+    setAiError('');
+    setAiResult(null);
+    try {
+      const res = await fetch('/api/ai/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(preset ? { preset } : { question: aiQuestion.trim() }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setAiResult({ answer: data.answer, chart: data.chart });
+      } else {
+        setAiError(data.error || 'Something went wrong.');
+      }
+    } catch {
+      setAiError('Could not reach the AI. Try again.');
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   function formatMoney(amount: string | number | null, currency = 'CAD') {
     if (amount === null) return '—';
     const n = Number(amount);
@@ -202,6 +239,63 @@ export default function DashboardPage() {
     if (pct >= 1) return RED;
     if (pct >= 0.8) return YELLOW;
     return GREEN;
+  }
+
+  const CHART_COLORS = ['#22c55e', '#3b82f6', '#eab308', '#a855f7', '#ef4444', '#14b8a6', '#f97316'];
+
+  function renderChart(chart: ChartSpec) {
+    const max = Math.max(...chart.values, 0.01);
+    if (chart.type === 'bar') {
+      return (
+        <div style={{ marginTop: '0.75rem' }}>
+          {chart.title && <p style={{ color: MUTED, fontSize: '0.75rem', margin: '0 0 0.6rem' }}>{chart.title}</p>}
+          {chart.labels.map((label, i) => (
+            <div key={label} style={{ marginBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: '0.25rem' }}>
+                <span style={{ color: '#ddd' }}>{label}</span>
+                <span style={{ color: '#fff', fontWeight: 600 }}>{formatMoney(chart.values[i])}</span>
+              </div>
+              <div style={{ height: 6, background: BORDER, borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%',
+                  width: `${Math.max(2, (chart.values[i] / max) * 100)}%`,
+                  background: CHART_COLORS[i % CHART_COLORS.length],
+                  borderRadius: 3,
+                }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // Pie: a CSS conic-gradient ring plus a swatch legend -- no chart library needed.
+    const total = chart.values.reduce((s, v) => s + v, 0) || 1;
+    let cursor = 0;
+    const stops = chart.values.map((v, i) => {
+      const start = (cursor / total) * 360;
+      cursor += v;
+      const end = (cursor / total) * 360;
+      return `${CHART_COLORS[i % CHART_COLORS.length]} ${start}deg ${end}deg`;
+    });
+    return (
+      <div style={{ marginTop: '0.75rem', display: 'flex', gap: '1.25rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{
+          width: 120, height: 120, borderRadius: '50%', flexShrink: 0,
+          background: `conic-gradient(${stops.join(', ')})`,
+        }} />
+        <div style={{ flex: 1, minWidth: 140 }}>
+          {chart.title && <p style={{ color: MUTED, fontSize: '0.75rem', margin: '0 0 0.5rem' }}>{chart.title}</p>}
+          {chart.labels.map((label, i) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem', fontSize: '0.78rem' }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: CHART_COLORS[i % CHART_COLORS.length], flexShrink: 0 }} />
+              <span style={{ color: '#ddd', flex: 1 }}>{label}</span>
+              <span style={{ color: '#fff', fontWeight: 600 }}>{formatMoney(chart.values[i])}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   const cardStyle: React.CSSProperties = {
@@ -257,6 +351,78 @@ export default function DashboardPage() {
           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem',
         }}>💰</div>
         <h1 style={{ color: '#fff', fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Budget</h1>
+      </div>
+
+      {/* Ask AI */}
+      <div style={cardStyle}>
+        <div
+          onClick={() => setShowAskAI(!showAskAI)}
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+        >
+          <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: 0 }}>✨ Ask AI</h2>
+          <span style={{ color: MUTED, fontSize: '0.8rem' }}>{showAskAI ? '−' : '+'}</span>
+        </div>
+
+        {showAskAI && (
+          <div style={{ marginTop: '1rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+              {[
+                { key: 'trends', label: 'Spending trends' },
+                { key: 'budget_risks', label: 'Budget risks' },
+                { key: 'category_breakdown', label: 'Category breakdown' },
+              ].map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => askAI(p.key)}
+                  disabled={aiLoading}
+                  style={{
+                    padding: '0.5rem 0.85rem', borderRadius: 8, border: `1px solid ${BORDER}`,
+                    background: '#111', color: aiLoading ? '#555' : '#ddd', fontSize: '0.8rem',
+                    cursor: aiLoading ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <input
+                type="text"
+                value={aiQuestion}
+                onChange={(e) => setAiQuestion(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && askAI()}
+                placeholder="Ask about your spending..."
+                style={{
+                  flex: 1, padding: '0.65rem 0.85rem', borderRadius: 8, border: `1px solid ${BORDER}`,
+                  background: '#111', color: '#fff', fontSize: '0.85rem', boxSizing: 'border-box', outline: 'none',
+                }}
+              />
+              <button
+                onClick={() => askAI()}
+                disabled={aiLoading || !aiQuestion.trim()}
+                style={{
+                  padding: '0.65rem 1.1rem', borderRadius: 8, border: 'none',
+                  background: aiLoading || !aiQuestion.trim() ? '#2a2a2a' : GREEN,
+                  color: aiLoading || !aiQuestion.trim() ? '#555' : '#000',
+                  fontSize: '0.85rem', fontWeight: 600,
+                  cursor: aiLoading || !aiQuestion.trim() ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Ask
+              </button>
+            </div>
+
+            {aiLoading && <p style={{ color: MUTED, fontSize: '0.85rem', marginTop: '0.75rem' }}>Thinking...</p>}
+            {aiError && <p style={{ color: RED, fontSize: '0.85rem', marginTop: '0.75rem' }}>{aiError}</p>}
+            {aiResult && (
+              <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: `1px solid ${BORDER}` }}>
+                <p style={{ color: '#fff', fontSize: '0.9rem', margin: 0, lineHeight: 1.5 }}>{aiResult.answer}</p>
+                {aiResult.chart && renderChart(aiResult.chart)}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="grid">

@@ -188,7 +188,11 @@ time of day: ${timeOfDay}`;
     }
 
     const data = await res.json();
-    const text = (data.content?.[0]?.text ?? '').trim();
+    // Sonnet 5 runs adaptive thinking by default, so content[0] can be a
+    // "thinking" block rather than the "text" block -- find the text block
+    // explicitly instead of assuming it's first.
+    const textBlock = data.content?.find((b: { type: string }) => b.type === 'text');
+    const text = (textBlock?.text ?? '').trim();
     const match = leafCategories.find((c) => `${c.parent_name} > ${c.name}` === text || c.name === text);
     return match ?? null;
   } catch (err) {
