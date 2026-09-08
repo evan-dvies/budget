@@ -68,10 +68,11 @@ async function main() {
     Food: { children: ['Groceries', 'Dining Out', 'Coffee'] },
     Transportation: { children: ['Gas', 'Uber/Lyft', 'Parking', 'Transit'] },
     'Going Out': { children: ['Bars/Nightlife', 'Entertainment'] },
-    'Health & Fitness': { children: ['Gym', 'Supplements', 'Pharmacy', 'Medical'] },
+    'Health & Fitness': { children: ['Gym', 'Supplements', 'Pharmacy', 'Medical', 'Nicotine Pouches'] },
     Shopping: { children: ['Clothing', 'Amazon/Online', 'General Shopping'] },
     Subscriptions: { children: ['Streaming', 'Music', 'Other Subscriptions'] },
     Transfers: { children: ['Credit Card Payment', 'Bank Transfer'] },
+    Other: { children: ['Other Expenses'] },
   };
 
   const catId = {};
@@ -117,7 +118,7 @@ async function main() {
     { priority: 30, pattern: 'PARKING', type: 'contains', category: 'Parking' },
     { priority: 30, pattern: 'INDIGO PARK', type: 'contains', category: 'Parking' },
     { priority: 30, pattern: "MCDONALD|SUBWAY|WENDY'S|QUESADA", type: 'regex', category: 'Dining Out' },
-    { priority: 30, pattern: 'PNE FOOD|PNE EXTERNAL FOOD', type: 'regex', category: 'Dining Out' },
+    { priority: 30, pattern: 'PNE', type: 'contains', category: 'Dining Out' },
     { priority: 30, pattern: 'DONUT', type: 'contains', category: 'Coffee' },
     { priority: 30, pattern: "NAT'S COFFEE", type: 'contains', category: 'Coffee' },
     { priority: 30, pattern: 'PUB|BREWERY|BREWING|SALOON|TAVERN|TAP & BARREL', type: 'regex', category: 'Bars/Nightlife' },
@@ -130,6 +131,42 @@ async function main() {
     { priority: 30, pattern: 'CRUNCHYROLL', type: 'contains', category: 'Streaming' },
     { priority: 30, pattern: 'ANTHROPIC', type: 'contains', category: 'Other Subscriptions' },
     { priority: 30, pattern: 'APPLE\\.COM/BILL', type: 'regex', category: 'Other Subscriptions' },
+
+    // Gas-station-adjacent, identified by the user from local knowledge.
+    { priority: 30, pattern: 'CENTEX', type: 'contains', category: 'Gas' },
+    { priority: 30, pattern: 'CHEVRON', type: 'contains', category: 'Gas' },
+    { priority: 30, pattern: 'AIR-SERV', type: 'contains', category: 'Gas' },
+
+    // Bars/breweries/liquor -- liquor stores explicitly routed to Going Out
+    // per the user (these are "going out drinking" purchases, not groceries).
+    { priority: 30, pattern: 'BIG ROCK', type: 'contains', category: 'Bars/Nightlife' },
+    { priority: 30, pattern: 'CRAFT 10TH AVE', type: 'contains', category: 'Bars/Nightlife' },
+    { priority: 30, pattern: 'ROSE AND CROWN', type: 'contains', category: 'Bars/Nightlife' },
+    { priority: 30, pattern: 'STREETCAR', type: 'contains', category: 'Bars/Nightlife' },
+    { priority: 30, pattern: 'BC LIQUOR|ACE LIQUOR|LIQUOR QUICKER', type: 'regex', category: 'Bars/Nightlife' },
+
+    { priority: 30, pattern: 'CLUB16', type: 'contains', category: 'Gym' },
+    { priority: 30, pattern: 'SUPPLEMENT', type: 'contains', category: 'Supplements' },
+    { priority: 30, pattern: 'ELYSIAN', type: 'contains', category: 'Coffee' },
+    { priority: 30, pattern: 'RONA', type: 'contains', category: 'General Shopping' },
+    { priority: 30, pattern: 'LONSDALE', type: 'contains', category: 'Clothing' },
+    { priority: 30, pattern: 'MUSESC', type: 'contains', category: 'Music' },
+
+    // Nicotine pouches -- identified by the user, no existing category fit.
+    { priority: 30, pattern: 'TSAWWASSEN', type: 'contains', category: 'Nicotine Pouches' },
+    { priority: 30, pattern: 'VALLEY RIDGE', type: 'contains', category: 'Nicotine Pouches' },
+
+    // ATM cash deposits -- the user's own money going in, treated as income.
+    { priority: 30, pattern: 'ATM DEPOSIT', type: 'contains', category: 'Salary / Direct Deposit', direction: 'inflow' },
+
+    // Everything else the user explicitly called "other".
+    { priority: 30, pattern: 'PURCHASE INTEREST', type: 'contains', category: 'Other Expenses' },
+    { priority: 30, pattern: 'ONLINE TRANSFER TO DEPOSIT ACCOUNT', type: 'contains', category: 'Other Expenses' },
+    { priority: 30, pattern: 'WESTJET', type: 'contains', category: 'Other Expenses' },
+    { priority: 30, pattern: 'JOSEPH CHAI', type: 'contains', category: 'Other Expenses' },
+    { priority: 30, pattern: 'MATTANDSTEVE', type: 'contains', category: 'Other Expenses' },
+    { priority: 30, pattern: 'ICBC', type: 'contains', category: 'Other Expenses' },
+    { priority: 30, pattern: '7 ELEVEN|7-ELEVEN|COCA COLA', type: 'regex', category: 'Other Expenses' },
   ];
 
   for (const r of rules) {
