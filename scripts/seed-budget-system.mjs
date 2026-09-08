@@ -25,13 +25,29 @@ async function run(label, text, params = []) {
 }
 
 async function upsertCategory(name, parentId, isIncome = false) {
-  const rows = await sql.query(
-    `INSERT INTO categories (name, parent_id, is_income)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (name, parent_id) DO UPDATE SET is_income = EXCLUDED.is_income
-     RETURNING id`,
-    [name, parentId, isIncome],
-  );
+  // categories' table-level UNIQUE(name, parent_id) constraint does NOT catch
+  // duplicate top-level rows: standard SQL treats every NULL parent_id as
+  // distinct from every other NULL, so ON CONFLICT (name, parent_id) silently
+  // never fires for parent_id IS NULL and just inserts a fresh duplicate on
+  // every re-run. categories_toplevel_name_key (a partial index scoped to
+  // parent_id IS NULL, created above) is what actually enforces uniqueness
+  // for top-level rows, so a top-level upsert has to target that index
+  // specifically instead.
+  const rows = parentId === null
+    ? await sql.query(
+        `INSERT INTO categories (name, parent_id, is_income)
+         VALUES ($1, NULL, $2)
+         ON CONFLICT (name) WHERE parent_id IS NULL DO UPDATE SET is_income = EXCLUDED.is_income
+         RETURNING id`,
+        [name, isIncome],
+      )
+    : await sql.query(
+        `INSERT INTO categories (name, parent_id, is_income)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (name, parent_id) DO UPDATE SET is_income = EXCLUDED.is_income
+         RETURNING id`,
+        [name, parentId, isIncome],
+      );
   return rows[0].id;
 }
 
@@ -48,6 +64,11 @@ async function main() {
   await run(
     "add 'ai' to category_source enum",
     `ALTER TYPE category_source ADD VALUE IF NOT EXISTS 'ai'`,
+  );
+  await run(
+    'add top-level category dedup index',
+    `CREATE UNIQUE INDEX IF NOT EXISTS categories_toplevel_name_key
+       ON categories (name) WHERE parent_id IS NULL`,
   );
   await run(
     'add AI-cache unique index on category_rules',

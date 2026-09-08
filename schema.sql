@@ -315,6 +315,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS category_rules_ai_cache_key
 CREATE UNIQUE INDEX IF NOT EXISTS category_rules_pattern_category_key
     ON category_rules (pattern, category_id);
 
+-- categories' own UNIQUE(name, parent_id) table constraint never catches
+-- duplicate top-level rows -- standard SQL treats every NULL parent_id as
+-- distinct from every other NULL, so re-seeding a top-level category
+-- (Income, Food, ...) silently inserted a fresh duplicate every run until
+-- this index existed for ON CONFLICT to actually target.
+CREATE UNIQUE INDEX IF NOT EXISTS categories_toplevel_name_key
+    ON categories (name) WHERE parent_id IS NULL;
+
 -- Categories, category_rules, and budgets are seeded by
 -- scripts/seed-budget-system.mjs rather than inline here, since the seed
 -- data references category ids that only exist after insertion.
