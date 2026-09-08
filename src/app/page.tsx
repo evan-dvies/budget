@@ -230,37 +230,23 @@ export default function DashboardPage() {
     <main className="shell" style={{ minHeight: '100vh', background: BG, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       <style>{`
         .shell {
-          max-width: 480px;
+          max-width: min(96vw, 1600px);
           margin: 0 auto;
-          padding: 1.5rem 1rem 3rem;
+          padding: clamp(1.5rem, 3vw, 2.5rem) clamp(1rem, 3vw, 2rem) 3rem;
         }
+        /* No fixed breakpoints -- auto-fit recalculates the column count
+           off the shell's actual rendered width continuously, so dragging
+           the window (e.g. snapping it to half a laptop screen) collapses
+           or restores the two-column layout smoothly instead of only at a
+           couple of fixed pixel widths. minmax(min(340px, 100%), 1fr)
+           is the safe form of this pattern -- plain minmax(340px, 1fr)
+           would force a 340px-wide column even in a narrower viewport and
+           cause horizontal overflow on a small phone. */
         .grid {
-          display: block;
-        }
-        /* Phone: single column at (or near) full width -- default styles. */
-        /* Laptop: two columns, width scales with the window instead of a
-           fixed cap, so it fills the screen instead of floating small. */
-        @media (min-width: 700px) {
-          .shell {
-            max-width: min(94vw, 1400px);
-            padding: 2.5rem 2rem 4rem;
-          }
-          .grid {
-            display: grid;
-            grid-template-columns: 420px 1fr;
-            gap: 1.75rem;
-            align-items: start;
-          }
-        }
-        /* External monitor: fills most of the screen, still capped so
-           lines of text don't stretch uncomfortably wide. */
-        @media (min-width: 1600px) {
-          .shell {
-            max-width: min(92vw, 1800px);
-          }
-          .grid {
-            grid-template-columns: 480px 1fr;
-          }
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+          gap: 1.5rem;
+          align-items: start;
         }
       `}</style>
 
