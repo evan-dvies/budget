@@ -189,7 +189,11 @@ export default function DashboardPage() {
   }
 
   function formatDate(dateStr: string) {
-    return new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    // posted_date comes back as a full ISO timestamp (e.g.
+    // "2026-09-06T06:00:00.000Z"), not a bare date -- format in UTC so the
+    // calendar date shown matches what's stored, regardless of the
+    // viewer's local timezone offset.
+    return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
   }
 
   function budgetColor(spent: number, limit: number) {
@@ -238,24 +242,24 @@ export default function DashboardPage() {
            fixed cap, so it fills the screen instead of floating small. */
         @media (min-width: 700px) {
           .shell {
-            max-width: min(92vw, 1100px);
+            max-width: min(94vw, 1400px);
             padding: 2.5rem 2rem 4rem;
           }
           .grid {
             display: grid;
-            grid-template-columns: 400px 1fr;
+            grid-template-columns: 420px 1fr;
             gap: 1.75rem;
             align-items: start;
           }
         }
-        /* External monitor: a bit more room, still capped so lines of text
-           don't stretch uncomfortably wide. */
+        /* External monitor: fills most of the screen, still capped so
+           lines of text don't stretch uncomfortably wide. */
         @media (min-width: 1600px) {
           .shell {
-            max-width: 1360px;
+            max-width: min(92vw, 1800px);
           }
           .grid {
-            grid-template-columns: 460px 1fr;
+            grid-template-columns: 480px 1fr;
           }
         }
       `}</style>
