@@ -223,6 +223,7 @@ async function main() {
     ['Groceries', 400], ['Dining Out', 200], ['Coffee', 50],
     ['Gas', 150], ['Uber/Lyft', 100], ['Going Out', 200],
     ['Gym', 60], ['Supplements', 80], ['Shopping', 150], ['Subscriptions', 50],
+    ['Rent', 700],
   ];
   for (const [name, amount] of budgets) {
     const categoryId = catId[name];
