@@ -3,6 +3,16 @@ import { fetchAccounts, parseAmount } from '@/lib/simplefin';
 import { cleanDescription } from '@/lib/import/normalize';
 import { fingerprintOf } from '@/lib/import/fingerprint';
 import { categorizeWithContext, loadCategorizationContext } from '@/lib/categorize';
+import { matchTransfers } from '@/lib/transferMatch';
+
+/**
+ * SimpleFIN doesn't expose an account-type field in the shape we consume,
+ * so infer credit cards from the name -- good enough for the institutions
+ * actually connected. Anything else defaults to depository.
+ */
+function inferAccountType(name: string): 'credit' | 'depository' {
+  return /visa|mastercard|amex|credit/i.test(name) ? 'credit' : 'depository';
+}
 
 export async function POST(request: Request) {
   const auth = request.headers.get('authorization');
@@ -45,14 +55,16 @@ export async function POST(request: Request) {
       const { rows: acctRows } = await db.query<{ id: string }>(
         `INSERT INTO accounts
            (name, institution, type, currency, current_balance, balance_as_of, source, simplefin_account_id)
-         VALUES ($1, $2, 'depository', $3, $4, NOW(), 'simplefin', $5)
+         VALUES ($1, $2, $3, $4, $5, NOW(), 'simplefin', $6)
          ON CONFLICT (simplefin_account_id) DO UPDATE
            SET current_balance = EXCLUDED.current_balance,
-               balance_as_of   = NOW()
+               balance_as_of   = NOW(),
+               type            = EXCLUDED.type
          RETURNING id`,
         [
           sfAccount.name,
           sfAccount.org?.name ?? 'Unknown',
+          inferAccountType(sfAccount.name),
           sfAccount.currency ?? 'CAD',
           parseAmount(sfAccount.balance),
           sfAccount.id,
@@ -131,11 +143,14 @@ export async function POST(request: Request) {
     // Update last synced timestamp
     await db.query(`UPDATE simplefin_access SET last_synced_at = NOW()`);
 
+    const { matchedPairs } = await matchTransfers();
+
     return Response.json({
       ok: true,
       accounts: accounts.length,
       added: totalAdded,
       skipped: totalSkipped,
+      transferPairsMatched: matchedPairs,
       warnings: errors,
     });
   } catch (err: any) {
