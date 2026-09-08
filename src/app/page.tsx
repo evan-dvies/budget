@@ -233,18 +233,29 @@ export default function DashboardPage() {
         .grid {
           display: block;
         }
-        /* Phone: everything above stacks in one column (default styles). */
-        /* Computer: wider shell, two columns instead of one long stack. */
-        @media (min-width: 860px) {
+        /* Phone: single column at (or near) full width -- default styles. */
+        /* Laptop: two columns, width scales with the window instead of a
+           fixed cap, so it fills the screen instead of floating small. */
+        @media (min-width: 700px) {
           .shell {
-            max-width: 980px;
+            max-width: min(92vw, 1100px);
             padding: 2.5rem 2rem 4rem;
           }
           .grid {
             display: grid;
-            grid-template-columns: 380px 1fr;
-            gap: 1.5rem;
+            grid-template-columns: 400px 1fr;
+            gap: 1.75rem;
             align-items: start;
+          }
+        }
+        /* External monitor: a bit more room, still capped so lines of text
+           don't stretch uncomfortably wide. */
+        @media (min-width: 1600px) {
+          .shell {
+            max-width: 1360px;
+          }
+          .grid {
+            grid-template-columns: 460px 1fr;
           }
         }
       `}</style>
