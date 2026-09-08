@@ -8,6 +8,10 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
     title: 'Budget',
   },
+  icons: {
+    icon: '/icon-192.png',
+    apple: '/icon-192.png',
+  },
 };
 
 export const viewport: Viewport = {

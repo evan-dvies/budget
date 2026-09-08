@@ -19,7 +19,13 @@ export async function middleware(request: NextRequest) {
     } catch {}
   }
 
-  if (pathname.startsWith('/api/')) {
+  // A real page navigation (typed URL, bookmark, home-screen icon) asks for
+  // text/html -- send those to the login page even under /api/, so a stale
+  // bookmark to an API route reads as "please log in" instead of a bare
+  // {"error":"Unauthorized"} JSON blob. Actual fetch() calls from the app
+  // don't send that Accept header and get the JSON response as before.
+  const wantsHtml = request.headers.get('accept')?.includes('text/html');
+  if (pathname.startsWith('/api/') && !wantsHtml) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const loginUrl = new URL('/login', request.url);

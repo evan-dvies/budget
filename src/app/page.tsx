@@ -497,10 +497,6 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
-
-      <div style={{ marginTop: '1rem', textAlign: 'center' }}>
-        <a href="/api/health" style={{ color: '#444', fontSize: '0.8rem' }}>Check database →</a>
-      </div>
     </main>
   );
 }
