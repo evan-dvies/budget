@@ -132,7 +132,7 @@ async function aiCategorize(
   if (!apiKey) return null;
 
   const options = leafCategories
-    .filter((c) => c.parent_name) // leaves only, not group headers
+    .filter((c) => c.parent_name && c.parent_name !== 'Transfers') // leaves only, and never let the AI guess a transfer -- that's the rule-based matcher's job
     .map((c) => `${c.parent_name} > ${c.name}`);
 
   const amount = Number(txn.amount);
@@ -145,8 +145,25 @@ async function aiCategorize(
 Categories:
 ${options.join('\n')}
 
+Judgment calls to apply (from the account holder, not generic assumptions):
+- Liquor stores (BC Liquor, Ace Liquor, or any similar retailer) go to
+  Going Out > Bars/Nightlife -- this household treats buying alcohol as a
+  "going out drinking" expense, not groceries.
+- Gas-station-adjacent charges (a brand name like Chevron/Shell/Esso, or
+  a coin-op air/vacuum pump like Air-Serv) go to Transportation > Gas even
+  if the merchant text doesn't literally say "gas station".
+- Bank/POS text is often truncated or abbreviated (e.g. "RCSS" for Real
+  Canadian Superstore, "CLUB16" for a Club16 gym membership) -- use
+  merchant_name and general knowledge of Canadian/Calgary-area brands to
+  recognize what a merchant actually is, don't just pattern-match the
+  literal string.
+- If nothing above applies and no category is a confident fit, prefer
+  Other > Other Expenses over forcing a bad match into an unrelated
+  category.
+
 Transaction:
 description: ${txn.description_clean}
+merchant_name: ${txn.merchant_name ?? '(none given)'}
 amount: ${amount} (negative = money out, positive = money in)
 time of day: ${timeOfDay}`;
 
