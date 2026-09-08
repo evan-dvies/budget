@@ -2,7 +2,7 @@ import { db } from '@/lib/db';
 import { fetchAccounts, parseAmount } from '@/lib/simplefin';
 import { cleanDescription } from '@/lib/import/normalize';
 import { fingerprintOf } from '@/lib/import/fingerprint';
-import { categorizeWithContext, loadCategorizationContext } from '@/lib/categorize';
+import { categorizeAll } from '@/lib/categorize';
 import { matchTransfers } from '@/lib/transferMatch';
 
 /**
@@ -48,7 +48,6 @@ export async function POST(request: Request) {
 
     let totalAdded = 0;
     let totalSkipped = 0;
-    const { rules, leafCategories } = await loadCategorizationContext();
 
     for (const sfAccount of accounts) {
       // Upsert the account
@@ -89,7 +88,7 @@ export async function POST(request: Request) {
         const merchantName = txn.payee?.trim() || null;
 
         try {
-          const { rows: txnRows } = await db.query<{ id: string; category_source: string }>(
+          await db.query(
             `INSERT INTO transactions
                (account_id, posted_date, posted_at, amount, currency,
                 description_raw, description_clean, merchant_name, pending,
@@ -100,8 +99,7 @@ export async function POST(request: Request) {
                    pending       = EXCLUDED.pending,
                    posted_date   = EXCLUDED.posted_date,
                    posted_at     = EXCLUDED.posted_at,
-                   merchant_name = EXCLUDED.merchant_name
-             RETURNING id, category_source`,
+                   merchant_name = EXCLUDED.merchant_name`,
             [
               accountId,
               postedDate,
@@ -117,27 +115,6 @@ export async function POST(request: Request) {
             ],
           );
           totalAdded++;
-
-          const inserted = txnRows[0];
-          if (inserted && inserted.category_source !== 'manual') {
-            try {
-              await categorizeWithContext(
-                {
-                  id: inserted.id,
-                  account_id: accountId,
-                  description_raw: txn.description,
-                  description_clean: descriptionClean,
-                  merchant_name: merchantName,
-                  amount: String(amount),
-                  posted_at: postedAt.toISOString(),
-                },
-                rules,
-                leafCategories,
-              );
-            } catch (categorizeErr) {
-              console.error('Categorization failed for transaction', inserted.id, (categorizeErr as Error).message);
-            }
-          }
         } catch {
           totalSkipped++;
         }
@@ -147,6 +124,12 @@ export async function POST(request: Request) {
     // Update last synced timestamp
     await db.query(`UPDATE simplefin_access SET last_synced_at = NOW()`);
 
+    // Re-categorize everything (not just what this sync touched) so a rule
+    // added or changed today applies to every past transaction on the very
+    // next sync -- SimpleFIN only re-fetches a 30-day window, so anything
+    // older than that would otherwise never see a rule update without a
+    // manual backfill.
+    const { processed: recategorized } = await categorizeAll();
     const { matchedPairs } = await matchTransfers();
 
     return Response.json({
@@ -154,6 +137,7 @@ export async function POST(request: Request) {
       accounts: accounts.length,
       added: totalAdded,
       skipped: totalSkipped,
+      recategorized,
       transferPairsMatched: matchedPairs,
       warnings: errors,
     });
