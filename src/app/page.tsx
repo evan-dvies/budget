@@ -20,6 +20,7 @@ interface Transaction {
   currency: string;
   description_clean: string;
   description_raw: string;
+  merchant_name: string | null;
   pending: boolean;
   category_id: string | null;
   category_name: string | null;
@@ -411,7 +412,7 @@ export default function DashboardPage() {
                       color: '#fff', fontSize: '0.85rem', fontWeight: 500,
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     }}>
-                      {t.description_clean || t.description_raw}
+                      {t.merchant_name || t.description_clean || t.description_raw}
                       {t.pending && <span style={{ color: YELLOW, fontSize: '0.7rem', marginLeft: '0.4rem' }}>PENDING</span>}
                     </div>
                     <div style={{ color: MUTED, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>

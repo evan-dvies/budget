@@ -18,6 +18,7 @@ interface TransactionRow {
   currency: string;
   description_clean: string;
   description_raw: string;
+  merchant_name: string | null;
   pending: boolean;
   category_id: string | null;
   category_name: string | null;
@@ -47,7 +48,7 @@ export async function GET() {
 
     const { rows: transactions } = await db.query<TransactionRow>(
       `SELECT t.id, t.account_id, a.name AS account_name, t.posted_date,
-              t.amount, t.currency, t.description_clean, t.description_raw, t.pending,
+              t.amount, t.currency, t.description_clean, t.description_raw, t.merchant_name, t.pending,
               t.category_id, c.name AS category_name
        FROM transactions t
        JOIN accounts a ON a.id = t.account_id

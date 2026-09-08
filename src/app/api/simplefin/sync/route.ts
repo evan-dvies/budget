@@ -86,18 +86,21 @@ export async function POST(request: Request) {
           description: txn.description,
         });
 
+        const merchantName = txn.payee?.trim() || null;
+
         try {
           const { rows: txnRows } = await db.query<{ id: string; category_source: string }>(
             `INSERT INTO transactions
                (account_id, posted_date, posted_at, amount, currency,
-                description_raw, description_clean, pending,
+                description_raw, description_clean, merchant_name, pending,
                 source, external_id, fingerprint, fingerprint_seq)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'simplefin', $9, $10, 0)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'simplefin', $10, $11, 0)
              ON CONFLICT (external_id) WHERE external_id IS NOT NULL DO UPDATE
-               SET amount      = EXCLUDED.amount,
-                   pending     = EXCLUDED.pending,
-                   posted_date = EXCLUDED.posted_date,
-                   posted_at   = EXCLUDED.posted_at
+               SET amount        = EXCLUDED.amount,
+                   pending       = EXCLUDED.pending,
+                   posted_date   = EXCLUDED.posted_date,
+                   posted_at     = EXCLUDED.posted_at,
+                   merchant_name = EXCLUDED.merchant_name
              RETURNING id, category_source`,
             [
               accountId,
@@ -107,6 +110,7 @@ export async function POST(request: Request) {
               sfAccount.currency ?? 'CAD',
               txn.description,
               descriptionClean,
+              merchantName,
               txn.pending ?? false,
               txn.id,
               fingerprint,
@@ -123,7 +127,7 @@ export async function POST(request: Request) {
                   account_id: accountId,
                   description_raw: txn.description,
                   description_clean: descriptionClean,
-                  merchant_name: null,
+                  merchant_name: merchantName,
                   amount: String(amount),
                   posted_at: postedAt.toISOString(),
                 },

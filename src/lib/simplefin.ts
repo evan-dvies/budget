@@ -25,6 +25,7 @@ export interface SFTransaction {
   posted: number;       // Unix timestamp
   amount: string;       // Signed decimal string, negative = money out
   description: string;
+  payee?: string;       // SimpleFIN's own cleaned merchant name, when present
   pending?: boolean;
 }
 

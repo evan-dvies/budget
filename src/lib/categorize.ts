@@ -67,20 +67,32 @@ function matches(rule: CategoryRule, txn: CategorizableTransaction): boolean {
   if (rule.direction === 'outflow' && amount >= 0) return false;
   if (rule.min_abs_amount !== null && Math.abs(amount) < Number(rule.min_abs_amount)) return false;
 
-  const value = fieldValue(txn, rule.match_field).toUpperCase();
   const pattern = rule.pattern.toUpperCase();
+  const test = (value: string): boolean => {
+    switch (rule.match_type) {
+      case 'contains': return value.includes(pattern);
+      case 'starts_with': return value.startsWith(pattern);
+      case 'equals': return value === pattern;
+      case 'regex':
+        try {
+          return new RegExp(rule.pattern, 'i').test(value);
+        } catch {
+          return false;
+        }
+    }
+  };
 
-  switch (rule.match_type) {
-    case 'contains': return value.includes(pattern);
-    case 'starts_with': return value.startsWith(pattern);
-    case 'equals': return value === pattern;
-    case 'regex':
-      try {
-        return new RegExp(rule.pattern, 'i').test(value);
-      } catch {
-        return false;
-      }
+  if (test(fieldValue(txn, rule.match_field).toUpperCase())) return true;
+
+  // merchant_name is SimpleFIN's own cleaned payee, often a better-cleaned
+  // alias of description_clean ("SQ *BIG ROCK BREWERY" -> "Big Rock
+  // Brewery") -- check it too for rules written against description_clean,
+  // without touching 'equals' semantics (used for AI-cache rules keyed on
+  // one exact description_clean string).
+  if (rule.match_field === 'description_clean' && rule.match_type !== 'equals' && txn.merchant_name) {
+    return test(txn.merchant_name.toUpperCase());
   }
+  return false;
 }
 
 /**
