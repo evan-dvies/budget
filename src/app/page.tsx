@@ -223,14 +223,32 @@ export default function DashboardPage() {
   const totalSpentAgainstBudget = budgets.reduce((sum, b) => sum + Number(b.spent), 0);
 
   return (
-    <main style={{
-      minHeight: '100vh',
-      background: BG,
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      padding: '1.5rem 1rem 3rem',
-      maxWidth: 480,
-      margin: '0 auto',
-    }}>
+    <main className="shell" style={{ minHeight: '100vh', background: BG, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      <style>{`
+        .shell {
+          max-width: 480px;
+          margin: 0 auto;
+          padding: 1.5rem 1rem 3rem;
+        }
+        .grid {
+          display: block;
+        }
+        /* Phone: everything above stacks in one column (default styles). */
+        /* Computer: wider shell, two columns instead of one long stack. */
+        @media (min-width: 860px) {
+          .shell {
+            max-width: 980px;
+            padding: 2.5rem 2rem 4rem;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            gap: 1.5rem;
+            align-items: start;
+          }
+        }
+      `}</style>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
         <div style={{
           width: 40, height: 40, borderRadius: 10, background: GREEN,
@@ -238,6 +256,9 @@ export default function DashboardPage() {
         }}>💰</div>
         <h1 style={{ color: '#fff', fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Budget</h1>
       </div>
+
+      <div className="grid">
+      <div>
 
       {/* Month summary */}
       <div style={cardStyle}>
@@ -333,7 +354,9 @@ export default function DashboardPage() {
           })}
         </div>
       )}
+      </div>
 
+      <div>
       {/* Accounts */}
       {accounts.length > 0 && (
         <div style={cardStyle}>
@@ -426,6 +449,8 @@ export default function DashboardPage() {
           })}
         </div>
       )}
+      </div>
+      </div>
 
       {status && (
         <p style={{ color: GREEN, fontSize: '0.9rem', textAlign: 'center', margin: '0.5rem 0 1rem' }}>{status}</p>
