@@ -72,6 +72,7 @@ export default function DashboardPage() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [monthTotals, setMonthTotals] = useState<MonthTotals>({ spent: '0', income: '0' });
   const [loadingData, setLoadingData] = useState(true);
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null); // "YYYY-MM", set from server response
   const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
   const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
   const [budgetInput, setBudgetInput] = useState('');
@@ -83,10 +84,11 @@ export default function DashboardPage() {
   const [aiError, setAiError] = useState('');
   const [aiResult, setAiResult] = useState<{ answer: string; chart: ChartSpec | null } | null>(null);
 
-  async function loadDashboard() {
+  async function loadDashboard(month?: string) {
     setLoadingData(true);
     try {
-      const res = await fetch('/api/dashboard');
+      const url = month ? `/api/dashboard?month=${month}` : '/api/dashboard';
+      const res = await fetch(url);
       const data = await res.json();
       if (data.ok) {
         setAccounts(data.accounts);
@@ -94,6 +96,7 @@ export default function DashboardPage() {
         setCategoryOptions(data.categoryOptions);
         setBudgets(data.budgets);
         setMonthTotals(data.monthTotals);
+        setSelectedMonth(data.month);
       }
     } catch {
       // Leave whatever was already loaded in place.
@@ -105,6 +108,19 @@ export default function DashboardPage() {
   useEffect(() => {
     loadDashboard();
   }, []);
+
+  function changeMonth(delta: number) {
+    if (!selectedMonth) return;
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+    const next = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    loadDashboard(next);
+  }
+
+  const currentRealMonth = (() => {
+    const now = new Date();
+    return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  })();
 
   async function connectSimpleFin() {
     if (!setupToken.trim()) return;
@@ -141,7 +157,7 @@ export default function DashboardPage() {
       const data = await res.json();
       if (data.ok) {
         setStatus(`Synced! ${data.added} transaction(s) imported across ${data.accounts} account(s).`);
-        await loadDashboard();
+        await loadDashboard(selectedMonth ?? undefined);
       } else {
         setStatus(`Sync error: ${data.error}`);
       }
@@ -160,7 +176,7 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ category_id: categoryId }),
       });
-      await loadDashboard();
+      await loadDashboard(selectedMonth ?? undefined);
     } catch {
       setStatus('Could not update category. Try again.');
     }
@@ -182,7 +198,7 @@ export default function DashboardPage() {
       const data = await res.json();
       if (data.ok) {
         setEditingBudgetId(null);
-        await loadDashboard();
+        await loadDashboard(selectedMonth ?? undefined);
       } else {
         setStatus(`Error: ${data.error}`);
       }
@@ -317,7 +333,11 @@ export default function DashboardPage() {
     cursor: active ? 'pointer' : 'not-allowed',
   });
 
-  const monthName = new Date().toLocaleDateString(undefined, { month: 'long' });
+  function formatMonthLabel(ym: string | null) {
+    if (!ym) return '';
+    const [y, m] = ym.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  }
   const totalBudget = budgets.reduce((sum, b) => sum + Number(b.amount), 0);
   const totalSpentAgainstBudget = budgets.reduce((sum, b) => sum + Number(b.spent), 0);
 
@@ -430,9 +450,31 @@ export default function DashboardPage() {
 
       {/* Month summary */}
       <div style={cardStyle}>
-        <p style={{ color: MUTED, fontSize: '0.8rem', margin: '0 0 0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          {monthName}
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+          <button
+            onClick={() => changeMonth(-1)}
+            disabled={!selectedMonth}
+            aria-label="Previous month"
+            style={{ background: 'none', border: 'none', color: MUTED, fontSize: '1.1rem', cursor: selectedMonth ? 'pointer' : 'default', padding: '0 0.5rem' }}
+          >
+            ‹
+          </button>
+          <p style={{ color: MUTED, fontSize: '0.8rem', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            {formatMonthLabel(selectedMonth)}
+          </p>
+          <button
+            onClick={() => changeMonth(1)}
+            disabled={!selectedMonth || selectedMonth >= currentRealMonth}
+            aria-label="Next month"
+            style={{
+              background: 'none', border: 'none', fontSize: '1.1rem', padding: '0 0.5rem',
+              color: (!selectedMonth || selectedMonth >= currentRealMonth) ? '#333' : MUTED,
+              cursor: (!selectedMonth || selectedMonth >= currentRealMonth) ? 'default' : 'pointer',
+            }}
+          >
+            ›
+          </button>
+        </div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <div>
             <div style={{ color: MUTED, fontSize: '0.8rem' }}>Spent</div>

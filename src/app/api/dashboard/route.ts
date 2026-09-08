@@ -37,8 +37,20 @@ interface BudgetRow {
   spent: string;
 }
 
-export async function GET() {
+/** Validates "YYYY-MM" (month 01-12); falls back to the current month for anything else. */
+function resolveMonth(param: string | null): string {
+  const match = param?.match(/^(\d{4})-(\d{2})$/);
+  const monthNum = match ? Number(match[2]) : NaN;
+  if (match && monthNum >= 1 && monthNum <= 12) return `${param}-01`;
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const monthStart = resolveMonth(searchParams.get('month'));
+
     const { rows: accounts } = await db.query<AccountRow>(
       `SELECT id, name, institution, currency, current_balance, balance_as_of
        FROM accounts
@@ -65,20 +77,25 @@ export async function GET() {
        ORDER BY p.name, c.name`,
     );
 
-    // Current calendar month, spend/income excluding transfers/excluded/pending
-    // (budgetable_transactions already filters those out). A budget can
-    // target a leaf category or a parent group (e.g. "Shopping" covers all
-    // of Clothing/Amazon/General Shopping) -- a correlated subquery avoids
-    // the row fan-out a join against child categories would otherwise
-    // cause for anything categorized directly to the group itself.
+    // Spend/income excluding transfers/excluded/pending (budgetable_transactions
+    // already filters those out), scoped to whichever month was requested --
+    // defaults to the current one, but a past month can be viewed explicitly.
+    // A budget can target a leaf category or a parent group (e.g. "Shopping"
+    // covers all of Clothing/Amazon/General Shopping) -- a correlated
+    // subquery avoids the row fan-out a join against child categories would
+    // otherwise cause for anything categorized directly to the group itself.
+    // The budget *amount* used is whichever version was actually in force
+    // during the requested month, not necessarily today's -- budgets are
+    // versioned by date specifically so a past month keeps showing the
+    // limit that applied then.
     const { rows: budgets } = await db.query<BudgetRow>(
       `SELECT b.category_id, c.name AS category_name, b.amount,
               (
                 SELECT COALESCE(SUM(-t.amount), 0)
                 FROM budgetable_transactions t
                 WHERE t.amount < 0
-                  AND t.posted_date >= date_trunc('month', CURRENT_DATE)
-                  AND t.posted_date <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+                  AND t.posted_date >= $1::date
+                  AND t.posted_date <  $1::date + INTERVAL '1 month'
                   AND (
                     t.category_id = b.category_id
                     OR t.category_id IN (SELECT id FROM categories WHERE parent_id = b.category_id)
@@ -86,8 +103,10 @@ export async function GET() {
               ) AS spent
        FROM budgets b
        JOIN categories c ON c.id = b.category_id
-       WHERE b.effective_to IS NULL
+       WHERE b.effective_from <= $1::date
+         AND (b.effective_to IS NULL OR b.effective_to > $1::date)
        ORDER BY c.name`,
+      [monthStart],
     );
 
     const { rows: monthTotals } = await db.query<{ spent: string; income: string }>(
@@ -95,12 +114,14 @@ export async function GET() {
          COALESCE(SUM(-amount) FILTER (WHERE amount < 0), 0) AS spent,
          COALESCE(SUM(amount) FILTER (WHERE amount > 0), 0) AS income
        FROM budgetable_transactions
-       WHERE posted_date >= date_trunc('month', CURRENT_DATE)
-         AND posted_date <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'`,
+       WHERE posted_date >= $1::date
+         AND posted_date <  $1::date + INTERVAL '1 month'`,
+      [monthStart],
     );
 
     return Response.json({
       ok: true,
+      month: monthStart.slice(0, 7),
       accounts,
       transactions,
       categoryOptions,
