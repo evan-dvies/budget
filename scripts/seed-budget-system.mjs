@@ -88,7 +88,7 @@ async function main() {
     Housing: { children: ['Rent'] },
     Food: { children: ['Groceries', 'Dining Out', 'Coffee'] },
     Transportation: { children: ['Gas', 'Uber/Lyft', 'Parking', 'Transit'] },
-    'Going Out': { children: ['Bars/Nightlife', 'Entertainment'] },
+    'Going Out': { children: ['Bars/Nightlife/Booze', 'Entertainment'] },
     'Health & Fitness': { children: ['Gym', 'Supplements', 'Pharmacy', 'Medical', 'Nicotine Pouches'] },
     Shopping: { children: ['Clothing', 'Amazon/Online', 'General Shopping'] },
     Subscriptions: { children: ['Streaming', 'Music', 'Other Subscriptions'] },
@@ -142,10 +142,10 @@ async function main() {
     { priority: 30, pattern: 'PNE', type: 'contains', category: 'Dining Out' },
     { priority: 30, pattern: 'DONUT', type: 'contains', category: 'Coffee' },
     { priority: 30, pattern: "NAT'S COFFEE", type: 'contains', category: 'Coffee' },
-    { priority: 30, pattern: 'PUB|BREWERY|BREWING|SALOON|TAVERN|TAP & BARREL', type: 'regex', category: 'Bars/Nightlife' },
+    { priority: 30, pattern: 'PUB|BREWERY|BREWING|SALOON|TAVERN|TAP & BARREL', type: 'regex', category: 'Bars/Nightlife/Booze' },
     { priority: 30, pattern: 'SEATGEEK|TICKETLEADER|TICKETMASTER', type: 'regex', category: 'Entertainment' },
     { priority: 30, pattern: 'CASCADES CASINO', type: 'contains', category: 'Entertainment' },
-    { priority: 30, pattern: 'OAK VIEW GROUP', type: 'contains', category: 'Bars/Nightlife' },
+    { priority: 30, pattern: 'OAK VIEW GROUP', type: 'contains', category: 'Bars/Nightlife/Booze' },
     { priority: 30, pattern: 'FOOT LOCKER', type: 'contains', category: 'Clothing' },
     { priority: 30, pattern: 'LULULEMON', type: 'contains', category: 'Clothing' },
     { priority: 30, pattern: 'DOLLARAMA', type: 'contains', category: 'General Shopping' },
@@ -161,11 +161,11 @@ async function main() {
 
     // Bars/breweries/liquor -- liquor stores explicitly routed to Going Out
     // per the user (these are "going out drinking" purchases, not groceries).
-    { priority: 30, pattern: 'BIG ROCK', type: 'contains', category: 'Bars/Nightlife' },
-    { priority: 30, pattern: 'CRAFT 10TH AVE', type: 'contains', category: 'Bars/Nightlife' },
-    { priority: 30, pattern: 'ROSE AND CROWN', type: 'contains', category: 'Bars/Nightlife' },
-    { priority: 30, pattern: 'STREETCAR', type: 'contains', category: 'Bars/Nightlife' },
-    { priority: 30, pattern: 'BC LIQUOR|ACE LIQUOR|LIQUOR QUICKER', type: 'regex', category: 'Bars/Nightlife' },
+    { priority: 30, pattern: 'BIG ROCK', type: 'contains', category: 'Bars/Nightlife/Booze' },
+    { priority: 30, pattern: 'CRAFT 10TH AVE', type: 'contains', category: 'Bars/Nightlife/Booze' },
+    { priority: 30, pattern: 'ROSE AND CROWN', type: 'contains', category: 'Bars/Nightlife/Booze' },
+    { priority: 30, pattern: 'STREETCAR', type: 'contains', category: 'Bars/Nightlife/Booze' },
+    { priority: 30, pattern: 'BC LIQUOR|ACE LIQUOR|LIQUOR QUICKER', type: 'regex', category: 'Bars/Nightlife/Booze' },
 
     { priority: 30, pattern: 'CLUB16', type: 'contains', category: 'Gym' },
     { priority: 30, pattern: 'SUPPLEMENT', type: 'contains', category: 'Supplements' },
