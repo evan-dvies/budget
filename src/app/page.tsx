@@ -44,6 +44,12 @@ interface MonthTotals {
   income: string;
 }
 
+interface NextPayday {
+  amount: number;
+  date: string;
+  daysUntil: number;
+}
+
 interface ChartSpec {
   type: 'bar' | 'pie';
   title: string;
@@ -71,6 +77,7 @@ export default function DashboardPage() {
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [monthTotals, setMonthTotals] = useState<MonthTotals>({ spent: '0', income: '0' });
+  const [nextPayday, setNextPayday] = useState<NextPayday | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null); // "YYYY-MM", set from server response
   const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
@@ -96,6 +103,7 @@ export default function DashboardPage() {
         setCategoryOptions(data.categoryOptions);
         setBudgets(data.budgets);
         setMonthTotals(data.monthTotals);
+        setNextPayday(data.nextPayday);
         setSelectedMonth(data.month);
       }
     } catch {
@@ -488,6 +496,13 @@ export default function DashboardPage() {
         {totalBudget > 0 && (
           <div style={{ marginTop: '0.75rem', color: MUTED, fontSize: '0.75rem' }}>
             {formatMoney(totalSpentAgainstBudget)} of {formatMoney(totalBudget)} budgeted
+          </div>
+        )}
+        {nextPayday && selectedMonth === currentRealMonth && (
+          <div style={{ marginTop: '0.4rem', color: GREEN, fontSize: '0.75rem' }}>
+            Next payday: {new Date(nextPayday.date + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })}
+            {nextPayday.daysUntil === 0 ? ' (today)' : ` (in ${nextPayday.daysUntil} day${nextPayday.daysUntil === 1 ? '' : 's'})`}
+            {' · '}{formatMoney(nextPayday.amount)}
           </div>
         )}
       </div>

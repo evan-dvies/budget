@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { getNextPayday } from '@/lib/incomeSchedule';
 
 interface AccountRow {
   id: string;
@@ -58,6 +59,11 @@ export async function GET(request: Request) {
        ORDER BY institution, name`,
     );
 
+    // Scoped to the same selected month as the budgets below -- previously
+    // this was just "the 50 most recent transactions" with no month filter
+    // at all, so viewing a month with little activity still showed whatever
+    // older transactions were needed to fill 50 rows (e.g. late-August
+    // transactions bleeding into a sparse September view).
     const { rows: transactions } = await db.query<TransactionRow>(
       `SELECT t.id, t.account_id, a.name AS account_name, t.posted_date,
               t.amount, t.currency, t.description_clean, t.description_raw, t.merchant_name, t.pending,
@@ -65,8 +71,11 @@ export async function GET(request: Request) {
        FROM transactions t
        JOIN accounts a ON a.id = t.account_id
        LEFT JOIN categories c ON c.id = t.category_id
+       WHERE t.posted_date >= $1::date
+         AND t.posted_date <  $1::date + INTERVAL '1 month'
        ORDER BY t.posted_date DESC, t.created_at DESC
-       LIMIT 50`,
+       LIMIT 200`,
+      [monthStart],
     );
 
     const { rows: categoryOptions } = await db.query<CategoryOption>(
@@ -119,6 +128,8 @@ export async function GET(request: Request) {
       [monthStart],
     );
 
+    const nextPayday = await getNextPayday();
+
     return Response.json({
       ok: true,
       month: monthStart.slice(0, 7),
@@ -127,6 +138,7 @@ export async function GET(request: Request) {
       categoryOptions,
       budgets,
       monthTotals: monthTotals[0] ?? { spent: '0', income: '0' },
+      nextPayday,
     });
   } catch (err) {
     return Response.json({ ok: false, error: (err as Error).message }, { status: 500 });

@@ -326,3 +326,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS categories_toplevel_name_key
 -- Categories, category_rules, and budgets are seeded by
 -- scripts/seed-budget-system.mjs rather than inline here, since the seed
 -- data references category ids that only exist after insertion.
+
+-- One recurring paycheck, anchored on a real confirmed payday so future
+-- ones can be computed (anchor + 14*n days) rather than guessed. Singleton:
+-- this user has exactly one pay schedule, so the seed script replaces
+-- whatever row is here instead of accumulating history.
+CREATE TABLE IF NOT EXISTS income_schedule (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    amount      NUMERIC(12,2) NOT NULL,
+    frequency   TEXT NOT NULL CHECK (frequency IN ('biweekly')),
+    anchor_date DATE NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

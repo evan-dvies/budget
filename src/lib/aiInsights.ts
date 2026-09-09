@@ -1,4 +1,5 @@
 import { db } from './db';
+import { getNextPayday } from './incomeSchedule';
 
 export interface ChartSpec {
   type: 'bar' | 'pie';
@@ -19,7 +20,7 @@ export interface AIInsightResult {
  * than an insights feature needs to expose.
  */
 async function gatherFinancialContext() {
-  const [monthlyCategory, monthlyTotals, budgets, accounts] = await Promise.all([
+  const [monthlyCategory, monthlyTotals, budgets, accounts, nextPayday] = await Promise.all([
     db.query<{ month: string; category: string; spent: string }>(
       `SELECT to_char(date_trunc('month', t.posted_date), 'YYYY-MM') AS month,
               c.name AS category, SUM(-t.amount) AS spent
@@ -59,6 +60,7 @@ async function gatherFinancialContext() {
     db.query<{ name: string; institution: string; current_balance: string | null }>(
       `SELECT name, institution, current_balance FROM accounts WHERE is_active = TRUE`,
     ),
+    getNextPayday(),
   ]);
 
   return {
@@ -67,6 +69,7 @@ async function gatherFinancialContext() {
     monthlyTotals: monthlyTotals.rows,
     currentMonthBudgets: budgets.rows,
     accountBalances: accounts.rows,
+    nextPayday, // { amount, date, daysUntil } or null -- use for cash-flow-aware planning advice
   };
 }
 
@@ -79,7 +82,7 @@ export async function askAI(userPrompt: string): Promise<AIInsightResult> {
   const prompt = `You are a financial assistant analyzing this person's personal budget data. Respond with ONLY a JSON object -- no markdown, no code fences, no text outside the JSON -- matching exactly this shape:
 {"answer": "2-4 sentence plain-English answer, can include specific dollar amounts", "chart": null or {"type": "bar" or "pie", "title": "short title", "labels": ["..."], "values": [123.45, ...]}}
 
-Only include a chart when comparing multiple categories or months would genuinely clarify the answer; use null otherwise. All amounts are in CAD. If the data doesn't cover enough history to answer confidently, say so plainly rather than guessing.
+Only include a chart when comparing multiple categories or months would genuinely clarify the answer; use null otherwise. All amounts are in CAD. If the data doesn't cover enough history to answer confidently, say so plainly rather than guessing. nextPayday tells you when their next paycheck lands and for how much -- use it for cash-flow-aware advice (e.g. "you have $X to last until payday in N days") when the question is about planning ahead, not just past spending.
 
 Data:
 ${JSON.stringify(context, null, 2)}
@@ -96,7 +99,10 @@ ${userPrompt}`;
     },
     body: JSON.stringify({
       model: 'claude-sonnet-5',
-      max_tokens: 1024,
+      // Sonnet 5 runs adaptive thinking by default, which eats into this
+      // budget before the visible answer even starts -- 1024 was cutting
+      // off longer answers mid-sentence.
+      max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
     }),
   });

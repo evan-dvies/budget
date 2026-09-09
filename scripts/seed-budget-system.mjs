@@ -71,6 +71,16 @@ async function main() {
        ON categories (name) WHERE parent_id IS NULL`,
   );
   await run(
+    'create income_schedule table',
+    `CREATE TABLE IF NOT EXISTS income_schedule (
+       id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       amount      NUMERIC(12,2) NOT NULL,
+       frequency   TEXT NOT NULL CHECK (frequency IN ('biweekly')),
+       anchor_date DATE NOT NULL, -- one confirmed real payday; future ones are anchor + 14*n days
+       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )`,
+  );
+  await run(
     'add AI-cache unique index on category_rules',
     `CREATE UNIQUE INDEX IF NOT EXISTS category_rules_ai_cache_key
        ON category_rules (pattern)
@@ -237,6 +247,18 @@ async function main() {
     );
   }
   console.log(`ok: seeded ${budgets.length} budgets`);
+
+  // --- Income schedule ------------------------------------------------
+  // Anchored on a real confirmed payday (from actual PAYROLL DEPOSIT
+  // history: Aug 20 and Sep 3 2026, exactly 14 days apart) rather than a
+  // guessed date. Singleton -- this user has exactly one pay schedule, so
+  // replace whatever's there instead of accumulating rows.
+  await sql.query(`DELETE FROM income_schedule`);
+  await sql.query(
+    `INSERT INTO income_schedule (amount, frequency, anchor_date) VALUES ($1, 'biweekly', $2)`,
+    [1468.94, '2026-08-20'],
+  );
+  console.log('ok: seeded income schedule (biweekly, $1468.94, anchored 2026-08-20)');
 
   console.log('Done.');
 }
