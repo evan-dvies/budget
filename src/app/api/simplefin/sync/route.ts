@@ -83,6 +83,23 @@ export async function POST(request: Request) {
       const accountId = acctRows[0]?.id;
       if (!accountId) continue;
 
+      // Rows already stored under one of this batch's external_ids keep their
+      // existing fingerprint_seq (irrelevant to the UPDATE path below, but
+      // needed so we don't hand out a seq some other row already owns).
+      // Everything else is a genuinely new row, and two distinct SimpleFIN
+      // transactions can share a fingerprint (same account/date/amount/
+      // description -- e.g. two identical transit taps) despite having
+      // different external_ids, so each new one needs the next free seq for
+      // that fingerprint rather than the hardcoded 0 this used to insert.
+      const externalIds = sfAccount.transactions.map((t) => t.id);
+      const { rows: existingRows } = await db.query<{ external_id: string; fingerprint_seq: number }>(
+        `SELECT external_id, fingerprint_seq FROM transactions
+         WHERE account_id = $1 AND external_id = ANY($2)`,
+        [accountId, externalIds],
+      );
+      const existingSeqByExternalId = new Map(existingRows.map((r) => [r.external_id, r.fingerprint_seq]));
+      const nextSeqByFingerprint = new Map<string, number>();
+
       for (const txn of sfAccount.transactions) {
         const postedAt = new Date(txn.posted * 1000);
         const postedDate = postedAt.toISOString().split('T')[0];
@@ -95,6 +112,19 @@ export async function POST(request: Request) {
           description: txn.description,
         });
 
+        let fingerprintSeq = existingSeqByExternalId.get(txn.id);
+        if (fingerprintSeq === undefined) {
+          if (!nextSeqByFingerprint.has(fingerprint)) {
+            const { rows: countRows } = await db.query<{ cnt: string }>(
+              `SELECT COUNT(*) AS cnt FROM transactions WHERE fingerprint = $1`,
+              [fingerprint],
+            );
+            nextSeqByFingerprint.set(fingerprint, Number(countRows[0].cnt));
+          }
+          fingerprintSeq = nextSeqByFingerprint.get(fingerprint)!;
+          nextSeqByFingerprint.set(fingerprint, fingerprintSeq + 1);
+        }
+
         const merchantName = txn.payee?.trim() || null;
 
         try {
@@ -103,7 +133,7 @@ export async function POST(request: Request) {
                (account_id, posted_date, posted_at, amount, currency,
                 description_raw, description_clean, merchant_name, pending,
                 source, external_id, fingerprint, fingerprint_seq)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'simplefin', $10, $11, 0)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'simplefin', $10, $11, $12)
              ON CONFLICT (external_id) WHERE external_id IS NOT NULL DO UPDATE
                SET amount        = EXCLUDED.amount,
                    pending       = EXCLUDED.pending,
@@ -122,6 +152,7 @@ export async function POST(request: Request) {
               txn.pending ?? false,
               txn.id,
               fingerprint,
+              fingerprintSeq,
             ],
           );
           totalAdded++;
