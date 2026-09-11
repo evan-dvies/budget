@@ -46,6 +46,15 @@ export async function POST(request: Request) {
       console.warn('SimpleFIN errors:', errors);
     }
 
+    // SimpleFIN reports connection problems (e.g. "Auth required" after a
+    // bank forces re-login) in `errors` while still returning 200 with
+    // whatever stale data it has cached -- the sync looks "successful" with
+    // nothing telling you the data stopped updating. Surface that distinctly
+    // so the UI can point you at where to fix it.
+    const authErrorPattern = /auth|expired|credential|reauthenticat|re-authenticat|attention|login/i;
+    const authErrors = errors.filter((e) => authErrorPattern.test(e));
+    const needsReauth = authErrors.length > 0;
+
     let totalAdded = 0;
     let totalSkipped = 0;
     const skippedDetails: { account: string; description: string; error: string }[] = [];
@@ -153,6 +162,9 @@ export async function POST(request: Request) {
       recategorized,
       transferPairsMatched: matchedPairs,
       warnings: errors,
+      needsReauth,
+      reauthMessage: needsReauth ? authErrors[0] : null,
+      reauthUrl: needsReauth ? 'https://beta-bridge.simplefin.org' : null,
     });
   } catch (err: any) {
     console.error('SimpleFIN sync error:', err.stack ?? err.message);

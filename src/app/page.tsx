@@ -71,6 +71,7 @@ export default function DashboardPage() {
   const [connecting, setConnecting] = useState(false);
   const [status, setStatus] = useState('');
   const [showConnect, setShowConnect] = useState(false);
+  const [reauth, setReauth] = useState<{ message: string; url: string } | null>(null);
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -165,6 +166,7 @@ export default function DashboardPage() {
       const data = await res.json();
       if (data.ok) {
         setStatus(`Synced! ${data.added} transaction(s) imported across ${data.accounts} account(s).`);
+        setReauth(data.needsReauth ? { message: data.reauthMessage, url: data.reauthUrl } : null);
         await loadDashboard(selectedMonth ?? undefined);
       } else {
         setStatus(`Sync error: ${data.error}`);
@@ -676,6 +678,25 @@ export default function DashboardPage() {
       )}
       </div>
       </div>
+
+      {reauth && (
+        <div
+          style={{
+            background: '#3a2f0f',
+            border: `1px solid ${YELLOW}`,
+            borderRadius: '8px',
+            padding: '0.75rem 1rem',
+            margin: '0.5rem 0 1rem',
+            textAlign: 'center',
+            fontSize: '0.9rem',
+          }}
+        >
+          <span style={{ color: YELLOW }}>⚠ Bank connection needs attention: {reauth.message}.</span>{' '}
+          <a href={reauth.url} target="_blank" rel="noopener noreferrer" style={{ color: YELLOW, textDecoration: 'underline' }}>
+            Reauthenticate at SimpleFIN →
+          </a>
+        </div>
+      )}
 
       {status && (
         <p style={{ color: GREEN, fontSize: '0.9rem', textAlign: 'center', margin: '0.5rem 0 1rem' }}>{status}</p>
