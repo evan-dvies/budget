@@ -338,3 +338,10 @@ CREATE TABLE IF NOT EXISTS income_schedule (
     anchor_date DATE NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Marks a category as a fixed/committed obligation (rent, subscriptions) as
+-- opposed to discretionary spending (dining, groceries, going out). Drives
+-- the "Safe to Spend" number: money still owed on an essential category's
+-- budget this month gets held back from your spendable balance, but
+-- discretionary budgets don't -- that money IS the safe-to-spend pool.
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS is_essential BOOLEAN NOT NULL DEFAULT FALSE;

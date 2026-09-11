@@ -50,6 +50,12 @@ interface NextPayday {
   daysUntil: number;
 }
 
+interface SafeToSpend {
+  amount: number;
+  spendableBalance: number;
+  essentialRemaining: number;
+}
+
 interface ChartSpec {
   type: 'bar' | 'pie';
   title: string;
@@ -79,6 +85,7 @@ export default function DashboardPage() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [monthTotals, setMonthTotals] = useState<MonthTotals>({ spent: '0', income: '0' });
   const [nextPayday, setNextPayday] = useState<NextPayday | null>(null);
+  const [safeToSpend, setSafeToSpend] = useState<SafeToSpend | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null); // "YYYY-MM", set from server response
   const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
@@ -105,6 +112,7 @@ export default function DashboardPage() {
         setBudgets(data.budgets);
         setMonthTotals(data.monthTotals);
         setNextPayday(data.nextPayday);
+        setSafeToSpend(data.safeToSpend);
         setSelectedMonth(data.month);
       }
     } catch {
@@ -382,6 +390,21 @@ export default function DashboardPage() {
         }}>💰</div>
         <h1 style={{ color: '#fff', fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Budget</h1>
       </div>
+
+      {/* Safe to Spend hero number */}
+      {safeToSpend && (
+        <div style={{ ...cardStyle, textAlign: 'center', background: '#0f1f18', border: `1px solid ${GREEN}` }}>
+          <div style={{ color: MUTED, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Safe to Spend
+          </div>
+          <div style={{ color: safeToSpend.amount < 0 ? RED : GREEN, fontSize: '2.5rem', fontWeight: 700, lineHeight: 1.2 }}>
+            {formatMoney(safeToSpend.amount)}
+          </div>
+          <div style={{ color: MUTED, fontSize: '0.75rem', marginTop: '0.25rem' }}>
+            {formatMoney(safeToSpend.spendableBalance)} in checking − {formatMoney(safeToSpend.essentialRemaining)} left on rent/subscriptions this month
+          </div>
+        </div>
+      )}
 
       {/* Ask AI */}
       <div style={cardStyle}>

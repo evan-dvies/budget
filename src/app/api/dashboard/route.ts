@@ -36,6 +36,7 @@ interface BudgetRow {
   category_name: string;
   amount: string;
   spent: string;
+  is_essential: boolean;
 }
 
 /** Validates "YYYY-MM" (month 01-12); falls back to the current month for anything else. */
@@ -98,7 +99,7 @@ export async function GET(request: Request) {
     // versioned by date specifically so a past month keeps showing the
     // limit that applied then.
     const { rows: budgets } = await db.query<BudgetRow>(
-      `SELECT b.category_id, c.name AS category_name, b.amount,
+      `SELECT b.category_id, c.name AS category_name, b.amount, c.is_essential,
               (
                 SELECT COALESCE(SUM(-t.amount), 0)
                 FROM budgetable_transactions t
@@ -130,6 +131,34 @@ export async function GET(request: Request) {
 
     const nextPayday = await getNextPayday();
 
+    // "Safe to spend" only means something against your actual current bank
+    // balance, so it's only computed for the real current month -- viewing
+    // August's budgets in September shouldn't produce a number that looks
+    // like it's telling you what you can spend today.
+    const now = new Date();
+    const currentMonthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
+    let safeToSpend = null;
+    if (monthStart === currentMonthStart) {
+      // Spendable balance = checking, not savings -- a TFSA balance sitting
+      // there isn't money you're safe to spend today.
+      const spendableBalance = accounts
+        .filter((a) => !/tfsa|rrsp|saving/i.test(a.name))
+        .reduce((sum, a) => sum + Number(a.current_balance ?? 0), 0);
+
+      // Only essential (fixed/committed) budgets hold money back -- a
+      // discretionary budget like Dining Out IS the safe-to-spend pool,
+      // not a reservation against it.
+      const essentialRemaining = budgets
+        .filter((b) => b.is_essential)
+        .reduce((sum, b) => sum + Math.max(Number(b.amount) - Number(b.spent), 0), 0);
+
+      safeToSpend = {
+        amount: Math.round((spendableBalance - essentialRemaining) * 100) / 100,
+        spendableBalance,
+        essentialRemaining,
+      };
+    }
+
     return Response.json({
       ok: true,
       month: monthStart.slice(0, 7),
@@ -139,6 +168,7 @@ export async function GET(request: Request) {
       budgets,
       monthTotals: monthTotals[0] ?? { spent: '0', income: '0' },
       nextPayday,
+      safeToSpend,
     });
   } catch (err) {
     return Response.json({ ok: false, error: (err as Error).message }, { status: 500 });
