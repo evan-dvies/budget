@@ -345,3 +345,15 @@ CREATE TABLE IF NOT EXISTS income_schedule (
 -- budget this month gets held back from your spendable balance, but
 -- discretionary budgets don't -- that money IS the safe-to-spend pool.
 ALTER TABLE categories ADD COLUMN IF NOT EXISTS is_essential BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- A single known-good TFSA contribution room figure, taken from CRA My
+-- Account, anchored to a date. Everything since that date is computed from
+-- transaction history (see src/lib/tfsa.ts) rather than re-entered -- same
+-- anchor-and-project shape as income_schedule. Singleton: replaced wholesale
+-- whenever the user re-checks CRA and updates it.
+CREATE TABLE IF NOT EXISTS tfsa_room (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    as_of_date  DATE NOT NULL,
+    room_amount NUMERIC(12,2) NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

@@ -70,6 +70,19 @@ interface Forecast {
   firstShortfall: ForecastDay | null;
 }
 
+interface TfsaStatus {
+  hasRoomSet: boolean;
+  asOfDate: string | null;
+  asOfAmount: number | null;
+  accruedSinceAsOf: number;
+  contributionsSinceAsOf: number;
+  withdrawalsRestoredSinceAsOf: number;
+  pendingRestoration: number;
+  currentRoom: number | null;
+  isOverContributed: boolean;
+  unverifiedLimitYears: number[];
+}
+
 interface ChartSpec {
   type: 'bar' | 'pie';
   title: string;
@@ -101,6 +114,11 @@ export default function DashboardPage() {
   const [nextPayday, setNextPayday] = useState<NextPayday | null>(null);
   const [safeToSpend, setSafeToSpend] = useState<SafeToSpend | null>(null);
   const [forecast, setForecast] = useState<Forecast | null>(null);
+  const [tfsa, setTfsa] = useState<TfsaStatus | null>(null);
+  const [showTfsaSetup, setShowTfsaSetup] = useState(false);
+  const [tfsaDateInput, setTfsaDateInput] = useState('');
+  const [tfsaAmountInput, setTfsaAmountInput] = useState('');
+  const [savingTfsa, setSavingTfsa] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null); // "YYYY-MM", set from server response
   const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
@@ -147,9 +165,47 @@ export default function DashboardPage() {
     }
   }
 
+  async function loadTfsa() {
+    try {
+      const res = await fetch('/api/tfsa');
+      const data = await res.json();
+      if (data.ok) setTfsa(data);
+    } catch {
+      // Leave whatever was already loaded in place.
+    }
+  }
+
+  async function saveTfsaRoom() {
+    const amount = Number(tfsaAmountInput);
+    if (!tfsaDateInput || !Number.isFinite(amount) || amount < 0) {
+      setStatus('Enter a valid date and a non-negative room amount.');
+      return;
+    }
+    setSavingTfsa(true);
+    try {
+      const res = await fetch('/api/tfsa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asOfDate: tfsaDateInput, amount }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setTfsa(data);
+        setShowTfsaSetup(false);
+      } else {
+        setStatus(`Could not save TFSA room: ${data.error}`);
+      }
+    } catch {
+      setStatus('Could not save TFSA room. Try again.');
+    } finally {
+      setSavingTfsa(false);
+    }
+  }
+
   useEffect(() => {
     loadDashboard();
     loadForecast();
+    loadTfsa();
   }, []);
 
   function changeMonth(delta: number) {
@@ -201,7 +257,7 @@ export default function DashboardPage() {
       if (data.ok) {
         setStatus(`Synced! ${data.added} transaction(s) imported across ${data.accounts} account(s).`);
         setReauth(data.needsReauth ? { message: data.reauthMessage, url: data.reauthUrl } : null);
-        await Promise.all([loadDashboard(selectedMonth ?? undefined), loadForecast()]);
+        await Promise.all([loadDashboard(selectedMonth ?? undefined), loadForecast(), loadTfsa()]);
       } else {
         setStatus(`Sync error: ${data.error}`);
       }
@@ -490,6 +546,90 @@ export default function DashboardPage() {
           </p>
         </div>
       )}
+
+      {/* TFSA contribution room */}
+      <div style={cardStyle}>
+        <div
+          onClick={() => setShowTfsaSetup(!showTfsaSetup)}
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+        >
+          <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: 0 }}>TFSA Contribution Room</h2>
+          <span style={{ color: MUTED, fontSize: '0.8rem' }}>{showTfsaSetup ? '−' : tfsa?.hasRoomSet ? 'Edit' : '+'}</span>
+        </div>
+
+        {tfsa?.hasRoomSet && !showTfsaSetup && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <div style={{ color: tfsa.isOverContributed ? RED : GREEN, fontSize: '1.8rem', fontWeight: 700 }}>
+              {formatMoney(tfsa.currentRoom)}
+            </div>
+            <div style={{ color: MUTED, fontSize: '0.75rem', marginTop: '0.15rem' }}>
+              room remaining, estimated from {formatMoney(tfsa.asOfAmount)} as of {tfsa.asOfDate ? formatDate(tfsa.asOfDate) : ''}
+            </div>
+            {tfsa.isOverContributed && (
+              <p style={{ color: RED, fontSize: '0.8rem', marginTop: '0.5rem', marginBottom: 0 }}>
+                ⚠ This estimate is negative — CRA charges 1%/month on TFSA over-contributions. Double-check against CRA My Account before contributing more.
+              </p>
+            )}
+            {tfsa.pendingRestoration > 0 && (
+              <p style={{ color: MUTED, fontSize: '0.75rem', marginTop: '0.5rem', marginBottom: 0 }}>
+                {formatMoney(tfsa.pendingRestoration)} withdrawn this year restores to your room on Jan 1 next year, not before.
+              </p>
+            )}
+            {tfsa.unverifiedLimitYears.length > 0 && (
+              <p style={{ color: YELLOW, fontSize: '0.7rem', marginTop: '0.5rem', marginBottom: 0 }}>
+                Annual limit not confirmed for {tfsa.unverifiedLimitYears.join(', ')} — using a $7,000 placeholder, verify with CRA.
+              </p>
+            )}
+            <p style={{ color: MUTED, fontSize: '0.7rem', marginTop: '0.5rem', marginBottom: 0 }}>
+              Planning estimate only, not tax advice — every dollar in or out of your TFSA counts here, including interest. Reconcile with CRA My Account periodically.
+            </p>
+          </div>
+        )}
+
+        {showTfsaSetup && (
+          <div style={{ marginTop: '1rem' }}>
+            <p style={{ color: MUTED, fontSize: '0.8rem', margin: '0 0 0.5rem' }}>
+              Enter your contribution room from CRA My Account and the date you checked it — everything since is estimated from your synced transactions.
+            </p>
+            <input
+              type="date"
+              value={tfsaDateInput}
+              onChange={(e) => setTfsaDateInput(e.target.value)}
+              style={{
+                width: '100%', padding: '0.75rem 1rem', borderRadius: 10,
+                border: `1.5px solid ${BORDER}`, background: '#111', color: '#fff',
+                fontSize: '0.9rem', boxSizing: 'border-box', marginBottom: '0.5rem', outline: 'none',
+              }}
+            />
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={tfsaAmountInput}
+              onChange={(e) => setTfsaAmountInput(e.target.value)}
+              placeholder="Room amount as of that date"
+              style={{
+                width: '100%', padding: '0.75rem 1rem', borderRadius: 10,
+                border: `1.5px solid ${BORDER}`, background: '#111', color: '#fff',
+                fontSize: '0.9rem', boxSizing: 'border-box', marginBottom: '0.75rem', outline: 'none',
+              }}
+            />
+            <button
+              onClick={saveTfsaRoom}
+              disabled={savingTfsa || !tfsaDateInput || !tfsaAmountInput}
+              style={btnStyle(!savingTfsa && !!tfsaDateInput && !!tfsaAmountInput)}
+            >
+              {savingTfsa ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        )}
+
+        {!tfsa?.hasRoomSet && !showTfsaSetup && (
+          <p style={{ color: MUTED, fontSize: '0.8rem', margin: '0.75rem 0 0' }}>
+            Set your contribution room from CRA My Account to start tracking.
+          </p>
+        )}
+      </div>
 
       {/* Ask AI */}
       <div style={cardStyle}>
