@@ -357,3 +357,12 @@ CREATE TABLE IF NOT EXISTS tfsa_room (
     room_amount NUMERIC(12,2) NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Marks a merchant as "cancelled" in the Subscriptions card -- only charges
+-- posted after dismissed_at still count, so a real resubscription (a new
+-- charge after the cancellation) naturally brings it back instead of being
+-- suppressed forever.
+CREATE TABLE IF NOT EXISTS subscription_dismissals (
+    merchant_name TEXT PRIMARY KEY,
+    dismissed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

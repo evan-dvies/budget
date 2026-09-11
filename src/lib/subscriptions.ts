@@ -75,7 +75,29 @@ function buildEntry(merchant: string, source: 'category' | 'pattern', occurrence
   };
 }
 
+export async function dismissSubscription(merchant: string): Promise<void> {
+  await db.query(
+    `INSERT INTO subscription_dismissals (merchant_name, dismissed_at)
+     VALUES ($1, NOW())
+     ON CONFLICT (merchant_name) DO UPDATE SET dismissed_at = NOW()`,
+    [merchant],
+  );
+}
+
 export async function detectSubscriptions(): Promise<SubscriptionEntry[]> {
+  const { rows: dismissedRows } = await db.query<{ merchant_name: string; dismissed_at: string }>(
+    `SELECT merchant_name, dismissed_at FROM subscription_dismissals`,
+  );
+  const dismissedAt = new Map(dismissedRows.map((d) => [d.merchant_name, new Date(d.dismissed_at).getTime()]));
+
+  // A dismissal only suppresses charges up to when it happened -- a new
+  // charge after that (a real resubscription) should bring the merchant
+  // back rather than being hidden forever.
+  function isSuppressed(merchant: string, date: string): boolean {
+    const cutoff = dismissedAt.get(merchant);
+    return cutoff !== undefined && new Date(date).getTime() <= cutoff;
+  }
+
   // Signal 1: anything already categorized as a subscription -- listed
   // regardless of how many times it's been seen, since the categorizer
   // already made the call that it's a subscription.
@@ -91,8 +113,10 @@ export async function detectSubscriptions(): Promise<SubscriptionEntry[]> {
 
   const byMerchantCategorized = new Map<string, Occurrence[]>();
   for (const r of categorized) {
+    const date = new Date(r.posted_date).toISOString().split('T')[0];
+    if (isSuppressed(r.merchant_name, date)) continue;
     const list = byMerchantCategorized.get(r.merchant_name) ?? [];
-    list.push({ date: new Date(r.posted_date).toISOString().split('T')[0], amount: Number(r.amount) });
+    list.push({ date, amount: Number(r.amount) });
     byMerchantCategorized.set(r.merchant_name, list);
   }
 
@@ -119,8 +143,10 @@ export async function detectSubscriptions(): Promise<SubscriptionEntry[]> {
 
   const byMerchantOther = new Map<string, Occurrence[]>();
   for (const r of everything) {
+    const date = new Date(r.posted_date).toISOString().split('T')[0];
+    if (isSuppressed(r.merchant_name, date)) continue;
     const list = byMerchantOther.get(r.merchant_name) ?? [];
-    list.push({ date: new Date(r.posted_date).toISOString().split('T')[0], amount: Number(r.amount) });
+    list.push({ date, amount: Number(r.amount) });
     byMerchantOther.set(r.merchant_name, list);
   }
 

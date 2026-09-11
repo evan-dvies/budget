@@ -229,6 +229,25 @@ export default function DashboardPage() {
     }
   }
 
+  async function dismissSubscription(merchant: string) {
+    setSubscriptions((prev) => prev.filter((s) => s.merchant !== merchant));
+    try {
+      const res = await fetch('/api/subscriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ merchant }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSubscriptions(data.subscriptions);
+        setSubsTotalMonthly(data.totalMonthly);
+      }
+    } catch {
+      // Already removed it optimistically -- a stale list on failure is
+      // fine, the next full reload will reconcile.
+    }
+  }
+
   useEffect(() => {
     loadDashboard();
     loadForecast();
@@ -681,15 +700,28 @@ export default function DashboardPage() {
                   {s.source === 'pattern' ? ' · detected, not tagged as Subscription' : ''}
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ color: s.isPriceCreep ? RED : '#ddd', fontSize: '0.9rem', fontWeight: 600 }}>
-                  {formatMoney(s.lastAmount)}
-                </div>
-                {s.priceIncreasePct !== null && (
-                  <div style={{ color: s.isPriceCreep ? RED : MUTED, fontSize: '0.7rem' }}>
-                    {s.priceIncreasePct > 0 ? '+' : ''}{s.priceIncreasePct}% vs last
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ color: s.isPriceCreep ? RED : '#ddd', fontSize: '0.9rem', fontWeight: 600 }}>
+                    {formatMoney(s.lastAmount)}
                   </div>
-                )}
+                  {s.priceIncreasePct !== null && (
+                    <div style={{ color: s.isPriceCreep ? RED : MUTED, fontSize: '0.7rem' }}>
+                      {s.priceIncreasePct > 0 ? '+' : ''}{s.priceIncreasePct}% vs last
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => dismissSubscription(s.merchant)}
+                  title="Cancelled — remove from this list"
+                  style={{
+                    background: 'none', border: `1px solid ${BORDER}`, borderRadius: 6,
+                    color: MUTED, fontSize: '0.75rem', width: 22, height: 22, lineHeight: 1,
+                    cursor: 'pointer', flexShrink: 0,
+                  }}
+                >
+                  ×
+                </button>
               </div>
             </div>
           ))}
