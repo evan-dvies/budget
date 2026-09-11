@@ -83,6 +83,18 @@ interface TfsaStatus {
   unverifiedLimitYears: number[];
 }
 
+interface SubscriptionEntry {
+  merchant: string;
+  source: 'category' | 'pattern';
+  cadence: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' | 'irregular';
+  occurrences: { date: string; amount: number }[];
+  lastAmount: number;
+  previousAmount: number | null;
+  priceIncreasePct: number | null;
+  isPriceCreep: boolean;
+  estimatedMonthly: number;
+}
+
 interface ChartSpec {
   type: 'bar' | 'pie';
   title: string;
@@ -119,6 +131,8 @@ export default function DashboardPage() {
   const [tfsaDateInput, setTfsaDateInput] = useState('');
   const [tfsaAmountInput, setTfsaAmountInput] = useState('');
   const [savingTfsa, setSavingTfsa] = useState(false);
+  const [subscriptions, setSubscriptions] = useState<SubscriptionEntry[]>([]);
+  const [subsTotalMonthly, setSubsTotalMonthly] = useState(0);
   const [loadingData, setLoadingData] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null); // "YYYY-MM", set from server response
   const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
@@ -202,10 +216,24 @@ export default function DashboardPage() {
     }
   }
 
+  async function loadSubscriptions() {
+    try {
+      const res = await fetch('/api/subscriptions');
+      const data = await res.json();
+      if (data.ok) {
+        setSubscriptions(data.subscriptions);
+        setSubsTotalMonthly(data.totalMonthly);
+      }
+    } catch {
+      // Leave whatever was already loaded in place.
+    }
+  }
+
   useEffect(() => {
     loadDashboard();
     loadForecast();
     loadTfsa();
+    loadSubscriptions();
   }, []);
 
   function changeMonth(delta: number) {
@@ -257,7 +285,7 @@ export default function DashboardPage() {
       if (data.ok) {
         setStatus(`Synced! ${data.added} transaction(s) imported across ${data.accounts} account(s).`);
         setReauth(data.needsReauth ? { message: data.reauthMessage, url: data.reauthUrl } : null);
-        await Promise.all([loadDashboard(selectedMonth ?? undefined), loadForecast(), loadTfsa()]);
+        await Promise.all([loadDashboard(selectedMonth ?? undefined), loadForecast(), loadTfsa(), loadSubscriptions()]);
       } else {
         setStatus(`Sync error: ${data.error}`);
       }
@@ -630,6 +658,46 @@ export default function DashboardPage() {
           </p>
         )}
       </div>
+
+      {/* Subscriptions */}
+      {subscriptions.length > 0 && (
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
+            <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: 0 }}>Subscriptions</h2>
+            <span style={{ color: MUTED, fontSize: '0.75rem' }}>~{formatMoney(subsTotalMonthly)}/mo</span>
+          </div>
+          {subscriptions.map((s) => (
+            <div
+              key={s.merchant}
+              style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '0.6rem 0', borderBottom: `1px solid ${BORDER}`,
+              }}
+            >
+              <div>
+                <div style={{ color: '#fff', fontSize: '0.85rem' }}>{s.merchant}</div>
+                <div style={{ color: MUTED, fontSize: '0.7rem', marginTop: '0.1rem' }}>
+                  {s.cadence === 'irregular' ? 'not enough history yet' : s.cadence}
+                  {s.source === 'pattern' ? ' · detected, not tagged as Subscription' : ''}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ color: s.isPriceCreep ? RED : '#ddd', fontSize: '0.9rem', fontWeight: 600 }}>
+                  {formatMoney(s.lastAmount)}
+                </div>
+                {s.priceIncreasePct !== null && (
+                  <div style={{ color: s.isPriceCreep ? RED : MUTED, fontSize: '0.7rem' }}>
+                    {s.priceIncreasePct > 0 ? '+' : ''}{s.priceIncreasePct}% vs last
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+          <p style={{ color: MUTED, fontSize: '0.7rem', marginTop: '0.6rem', marginBottom: 0 }}>
+            Built from your transaction history — merchants tagged "Subscriptions" always show up; other recurring monthly+ charges only show up once there's a consistent pattern. Price-creep flags need at least two charges to compare.
+          </p>
+        </div>
+      )}
 
       {/* Ask AI */}
       <div style={cardStyle}>
