@@ -56,6 +56,20 @@ interface SafeToSpend {
   essentialRemaining: number;
 }
 
+interface ForecastDay {
+  date: string;
+  balance: number;
+  events: { label: string; amount: number }[];
+}
+
+interface Forecast {
+  startingBalance: number;
+  avgDailyBurn: number;
+  days: ForecastDay[];
+  lowest: ForecastDay;
+  firstShortfall: ForecastDay | null;
+}
+
 interface ChartSpec {
   type: 'bar' | 'pie';
   title: string;
@@ -86,6 +100,7 @@ export default function DashboardPage() {
   const [monthTotals, setMonthTotals] = useState<MonthTotals>({ spent: '0', income: '0' });
   const [nextPayday, setNextPayday] = useState<NextPayday | null>(null);
   const [safeToSpend, setSafeToSpend] = useState<SafeToSpend | null>(null);
+  const [forecast, setForecast] = useState<Forecast | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null); // "YYYY-MM", set from server response
   const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
@@ -122,8 +137,19 @@ export default function DashboardPage() {
     }
   }
 
+  async function loadForecast() {
+    try {
+      const res = await fetch('/api/forecast');
+      const data = await res.json();
+      if (data.ok) setForecast(data);
+    } catch {
+      // Leave whatever was already loaded in place.
+    }
+  }
+
   useEffect(() => {
     loadDashboard();
+    loadForecast();
   }, []);
 
   function changeMonth(delta: number) {
@@ -175,7 +201,7 @@ export default function DashboardPage() {
       if (data.ok) {
         setStatus(`Synced! ${data.added} transaction(s) imported across ${data.accounts} account(s).`);
         setReauth(data.needsReauth ? { message: data.reauthMessage, url: data.reauthUrl } : null);
-        await loadDashboard(selectedMonth ?? undefined);
+        await Promise.all([loadDashboard(selectedMonth ?? undefined), loadForecast()]);
       } else {
         setStatus(`Sync error: ${data.error}`);
       }
@@ -273,6 +299,41 @@ export default function DashboardPage() {
     if (pct >= 1) return RED;
     if (pct >= 0.8) return YELLOW;
     return GREEN;
+  }
+
+  function renderForecastChart(f: Forecast) {
+    const width = 600;
+    const height = 160;
+    const padY = 16;
+    const balances = f.days.map((d) => d.balance);
+    const maxBal = Math.max(...balances, 0);
+    const minBal = Math.min(...balances, 0);
+    const range = maxBal - minBal || 1;
+    const x = (i: number) => (i / (f.days.length - 1)) * width;
+    const y = (bal: number) => height - padY - ((bal - minBal) / range) * (height - 2 * padY);
+
+    const linePath = f.days.map((d, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(d.balance).toFixed(1)}`).join(' ');
+    const areaPath = `${linePath} L ${x(f.days.length - 1).toFixed(1)} ${y(0).toFixed(1)} L 0 ${y(0).toFixed(1)} Z`;
+    const zeroY = y(0);
+
+    return (
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {minBal < 0 && (
+          <line x1={0} y1={zeroY} x2={width} y2={zeroY} stroke={RED} strokeWidth={1} strokeDasharray="4 3" opacity={0.6} />
+        )}
+        <path d={areaPath} fill={f.firstShortfall ? RED : GREEN} opacity={0.08} />
+        <path d={linePath} fill="none" stroke={f.firstShortfall ? RED : GREEN} strokeWidth={2} />
+        {f.days.map((d, i) => d.events.length > 0 && (
+          <circle
+            key={d.date}
+            cx={x(i)}
+            cy={y(d.balance)}
+            r={3}
+            fill={d.events[0].amount > 0 ? GREEN : YELLOW}
+          />
+        ))}
+      </svg>
+    );
   }
 
   const CHART_COLORS = ['#22c55e', '#3b82f6', '#eab308', '#a855f7', '#ef4444', '#14b8a6', '#f97316'];
@@ -403,6 +464,30 @@ export default function DashboardPage() {
           <div style={{ color: MUTED, fontSize: '0.75rem', marginTop: '0.25rem' }}>
             {formatMoney(safeToSpend.spendableBalance)} in checking − {formatMoney(safeToSpend.essentialRemaining)} left on rent/subscriptions this month
           </div>
+        </div>
+      )}
+
+      {/* Cash-flow forecast */}
+      {forecast && (
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
+            <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: 0 }}>45-Day Cash Flow</h2>
+            <span style={{ color: MUTED, fontSize: '0.75rem' }}>−{formatMoney(forecast.avgDailyBurn)}/day avg</span>
+          </div>
+          {renderForecastChart(forecast)}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.6rem', fontSize: '0.8rem' }}>
+            <span style={{ color: MUTED }}>
+              Lowest: <span style={{ color: forecast.lowest.balance < 0 ? RED : '#ddd', fontWeight: 600 }}>{formatMoney(forecast.lowest.balance)}</span> on {formatDate(forecast.lowest.date)}
+            </span>
+          </div>
+          {forecast.firstShortfall && (
+            <p style={{ color: RED, fontSize: '0.8rem', marginTop: '0.5rem', marginBottom: 0 }}>
+              ⚠ Projected to go negative around {formatDate(forecast.firstShortfall.date)} at this pace.
+            </p>
+          )}
+          <p style={{ color: MUTED, fontSize: '0.7rem', marginTop: '0.5rem', marginBottom: 0 }}>
+            Green dots = paycheck, yellow dots = rent. Everything else is smoothed from your trailing 30-day average spend — a rough projection, not a guarantee.
+          </p>
         </div>
       )}
 
