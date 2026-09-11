@@ -48,6 +48,7 @@ export async function POST(request: Request) {
 
     let totalAdded = 0;
     let totalSkipped = 0;
+    const skippedDetails: { account: string; description: string; error: string }[] = [];
 
     for (const sfAccount of accounts) {
       // Upsert the account
@@ -115,8 +116,19 @@ export async function POST(request: Request) {
             ],
           );
           totalAdded++;
-        } catch {
+        } catch (err: any) {
           totalSkipped++;
+          console.error(
+            `SimpleFIN sync: skipped txn "${txn.description}" on ${sfAccount.name}:`,
+            err.message,
+          );
+          if (skippedDetails.length < 20) {
+            skippedDetails.push({
+              account: sfAccount.name,
+              description: txn.description,
+              error: err.message ?? String(err),
+            });
+          }
         }
       }
     }
@@ -137,12 +149,13 @@ export async function POST(request: Request) {
       accounts: accounts.length,
       added: totalAdded,
       skipped: totalSkipped,
+      skippedDetails,
       recategorized,
       transferPairsMatched: matchedPairs,
       warnings: errors,
     });
   } catch (err: any) {
-    console.error('SimpleFIN sync error:', err.message);
+    console.error('SimpleFIN sync error:', err.stack ?? err.message);
     return Response.json({ error: err.message }, { status: 500 });
   }
 }

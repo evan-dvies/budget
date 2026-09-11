@@ -81,7 +81,27 @@ export async function fetchAccounts(
     ? { Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}` }
     : {};
 
-  const res = await fetch(url.toString(), { headers });
+  // SimpleFIN's upstream bank scrape can hang far longer than our serverless
+  // function's own execution limit -- without this the function gets killed
+  // by the platform with no error surfaced anywhere. Fail fast instead.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
+
+  let res: Response;
+  try {
+    res = await fetch(url.toString(), { headers, signal: controller.signal });
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw new Error(
+        'SimpleFIN fetch timed out after 25s -- the bridge (or the bank connection behind it) ' +
+        'is likely stuck and needs to be re-linked at beta-bridge.simplefin.org.',
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+
   if (!res.ok) {
     throw new Error(`SimpleFIN fetch failed: ${res.status} ${await res.text()}`);
   }
