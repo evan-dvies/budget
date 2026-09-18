@@ -60,14 +60,19 @@ export async function POST(request: Request) {
     const skippedDetails: { account: string; description: string; error: string }[] = [];
 
     for (const sfAccount of accounts) {
-      // Upsert the account
+      // Upsert the account. balance_as_of is SimpleFIN's own 'balance-date' --
+      // when the bank connection's underlying bridge scrape stalls, SimpleFIN
+      // keeps serving the same cached balance/transactions with no error, and
+      // stamping this with NOW() (our poll time) instead would make the data
+      // look fresh on every sync even though nothing actually updated.
+      const balanceAsOf = new Date(sfAccount['balance-date'] * 1000);
       const { rows: acctRows } = await db.query<{ id: string }>(
         `INSERT INTO accounts
            (name, institution, type, currency, current_balance, balance_as_of, source, simplefin_account_id)
-         VALUES ($1, $2, $3, $4, $5, NOW(), 'simplefin', $6)
+         VALUES ($1, $2, $3, $4, $5, $6, 'simplefin', $7)
          ON CONFLICT (simplefin_account_id) DO UPDATE
            SET current_balance = EXCLUDED.current_balance,
-               balance_as_of   = NOW(),
+               balance_as_of   = EXCLUDED.balance_as_of,
                type            = EXCLUDED.type
          RETURNING id`,
         [
@@ -76,6 +81,7 @@ export async function POST(request: Request) {
           inferAccountType(sfAccount.name),
           sfAccount.currency ?? 'CAD',
           parseAmount(sfAccount.balance),
+          balanceAsOf,
           sfAccount.id,
         ],
       );

@@ -9,6 +9,7 @@ interface Account {
   currency: string;
   current_balance: string | null;
   balance_as_of: string | null;
+  source: string;
 }
 
 interface Transaction {
@@ -522,6 +523,16 @@ export default function DashboardPage() {
   }
   const totalBudget = budgets.reduce((sum, b) => sum + Number(b.amount), 0);
   const totalSpentAgainstBudget = budgets.reduce((sum, b) => sum + Number(b.spent), 0);
+
+  // SimpleFIN can return HTTP 200 with an empty errors array while its own
+  // upstream bank scrape has stalled -- balance_as_of is SimpleFIN's own
+  // balance-date (not our poll time), so this catches silent staleness that
+  // never trips the `reauth` error-text detection above.
+  const STALE_HOURS = 30;
+  const staleAccounts = accounts.filter((a) => {
+    if (a.source !== 'simplefin' || !a.balance_as_of) return false;
+    return Date.now() - new Date(a.balance_as_of).getTime() > STALE_HOURS * 60 * 60 * 1000;
+  });
 
   return (
     <main className="shell" style={{ minHeight: '100vh', background: BG, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -1043,6 +1054,28 @@ export default function DashboardPage() {
           <a href={reauth.url} target="_blank" rel="noopener noreferrer" style={{ color: YELLOW, textDecoration: 'underline' }}>
             Reauthenticate at SimpleFIN →
           </a>
+        </div>
+      )}
+
+      {!reauth && staleAccounts.length > 0 && (
+        <div
+          style={{
+            background: '#3a2f0f',
+            border: `1px solid ${YELLOW}`,
+            borderRadius: '8px',
+            padding: '0.75rem 1rem',
+            margin: '0.5rem 0 1rem',
+            textAlign: 'center',
+            fontSize: '0.9rem',
+          }}
+        >
+          <span style={{ color: YELLOW }}>
+            ⚠ Bank data looks stale: {staleAccounts.map((a) => a.name).join(', ')} hasn't updated since{' '}
+            {new Date(
+              Math.min(...staleAccounts.map((a) => new Date(a.balance_as_of!).getTime())),
+            ).toLocaleString()}
+            . SimpleFIN may not have re-scraped the bank yet.
+          </span>
         </div>
       )}
 

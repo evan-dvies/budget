@@ -8,6 +8,7 @@ interface AccountRow {
   currency: string;
   current_balance: string | null;
   balance_as_of: string | null;
+  source: string;
 }
 
 interface TransactionRow {
@@ -54,7 +55,7 @@ export async function GET(request: Request) {
     const monthStart = resolveMonth(searchParams.get('month'));
 
     const { rows: accounts } = await db.query<AccountRow>(
-      `SELECT id, name, institution, currency, current_balance, balance_as_of
+      `SELECT id, name, institution, currency, current_balance, balance_as_of, source
        FROM accounts
        WHERE is_active = TRUE
        ORDER BY institution, name`,
