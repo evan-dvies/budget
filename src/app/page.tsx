@@ -126,6 +126,7 @@ const IconX = (p: { size?: number }) => <Icon {...p}><line x1="18" y1="6" x2="6"
 const IconSparkle = (p: { size?: number }) => <Icon {...p}><path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2z" /></Icon>;
 const IconCreditCard = (p: { size?: number }) => <Icon {...p}><rect x="1" y="4" width="22" height="16" rx="2" ry="2" /><line x1="1" y1="10" x2="23" y2="10" /></Icon>;
 const IconArrowUpRight = (p: { size?: number }) => <Icon {...p}><line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" /></Icon>;
+const IconFilter = (p: { size?: number }) => <Icon {...p}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></Icon>;
 
 // ---- Formatting helpers (no component state needed) ----
 
@@ -228,6 +229,7 @@ export default function DashboardPage() {
   const [loadingData, setLoadingData] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null); // "YYYY-MM", set from server response
   const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string>(''); // '' = all, 'uncategorized', or a category_id
   const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
   const [budgetInput, setBudgetInput] = useState('');
   const [savingBudget, setSavingBudget] = useState(false);
@@ -368,6 +370,11 @@ export default function DashboardPage() {
     const d = new Date(Date.UTC(y, m - 1 + delta, 1));
     const next = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
     loadDashboard(next);
+  }
+
+  function filterByCategory(categoryId: string) {
+    setCategoryFilter(categoryId);
+    document.getElementById('recent-transactions')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   const currentRealMonth = (() => {
@@ -593,9 +600,17 @@ export default function DashboardPage() {
     return Date.now() - new Date(a.balance_as_of).getTime() > STALE_HOURS * 60 * 60 * 1000;
   });
 
+  const filteredTransactions = !categoryFilter
+    ? transactions
+    : categoryFilter === 'uncategorized'
+      ? transactions.filter((t) => !t.category_id)
+      : transactions.filter((t) => t.category_id === categoryFilter);
+
+  const filteredTotal = filteredTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
+
   // Transactions arrive pre-sorted by posted_date desc, so consecutive rows
   // sharing a day-label collapse into one group without re-sorting.
-  const txnGroups = transactions.reduce<{ label: string; items: Transaction[] }[]>((groups, t) => {
+  const txnGroups = filteredTransactions.reduce<{ label: string; items: Transaction[] }[]>((groups, t) => {
     const label = groupLabel(t.posted_date);
     const last = groups[groups.length - 1];
     if (last && last.label === label) last.items.push(t);
@@ -1043,6 +1058,16 @@ export default function DashboardPage() {
                             Essential
                           </span>
                         )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); filterByCategory(b.category_id); }}
+                          title={`See ${b.category_name} transactions`}
+                          style={{
+                            display: 'flex', background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'var(--text-faint)', padding: 2,
+                          }}
+                        >
+                          <IconFilter size={11} />
+                        </button>
                       </span>
                       <span className="num" style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
                         {formatMoney(spent)} <span style={{ color: 'var(--text-faint)' }}>/ {formatMoney(limit)}</span>
@@ -1138,8 +1163,51 @@ export default function DashboardPage() {
 
       {/* Recent transactions */}
       {transactions.length > 0 && (
-        <div className="card" style={cardStyle}>
-          <h2 style={{ color: 'var(--text)', fontSize: '1rem', fontWeight: 700, margin: '0 0 0.5rem' }}>Recent Transactions</h2>
+        <div id="recent-transactions" className="card" style={cardStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <h2 style={{ color: 'var(--text)', fontSize: '1rem', fontWeight: 700, margin: 0 }}>Recent Transactions</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                style={{
+                  padding: '0.4rem 0.6rem', borderRadius: 8, border: '1px solid var(--border)',
+                  background: categoryFilter ? 'var(--primary-soft)' : 'var(--surface-2)',
+                  color: categoryFilter ? 'var(--primary-strong)' : 'var(--text-muted)',
+                  fontSize: '0.78rem', fontWeight: 600, maxWidth: 200,
+                }}
+              >
+                <option value="">All categories</option>
+                <option value="uncategorized">Uncategorized</option>
+                {categoryOptions.map((c) => (
+                  <option key={c.id} value={c.id}>{c.parent_name} &gt; {c.name}</option>
+                ))}
+              </select>
+              {categoryFilter && (
+                <button
+                  onClick={() => setCategoryFilter('')}
+                  className="icon-btn"
+                  style={{ width: 28, height: 28, borderRadius: 8, border: 'none', boxShadow: 'none', background: 'transparent' }}
+                  aria-label="Clear filter"
+                >
+                  <IconX size={13} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {categoryFilter && (
+            <div className="num" style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginBottom: '0.75rem' }}>
+              {filteredTransactions.length} transaction{filteredTransactions.length === 1 ? '' : 's'} · {formatMoney(filteredTotal)} total
+            </div>
+          )}
+
+          {categoryFilter && filteredTransactions.length === 0 && (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '0.5rem 0 0' }}>
+              No transactions in this category this month.
+            </p>
+          )}
+
           {txnGroups.map((grp) => (
             <div key={grp.label + grp.items[0].id} style={{ marginTop: '1rem' }}>
               <div style={{ color: 'var(--text-faint)', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
