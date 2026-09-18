@@ -620,6 +620,19 @@ export default function DashboardPage() {
 
   const isErrorStatus = /error|failed|could not|something went wrong/i.test(status);
 
+  // "Projected balance right before your next paycheck" -- reads the
+  // forecast's already-computed daily balance (current balance, minus the
+  // recent average daily burn, minus any rent landing in between) for the
+  // day right before the next payday lands. Distinct from Safe to Spend,
+  // which only reserves this month's essential budgets and doesn't look
+  // ahead at all -- this one is pace-based and time-bounded to the next
+  // payday specifically.
+  const untilPayday = (() => {
+    if (!forecast || !nextPayday || nextPayday.daysUntil <= 0) return null;
+    const day = forecast.days[nextPayday.daysUntil - 1];
+    return day ? day.balance : null;
+  })();
+
   return (
     <main className="shell" data-theme={theme} style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
       <style>{`
@@ -752,6 +765,20 @@ export default function DashboardPage() {
           <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.5rem' }}>
             {formatMoney(safeToSpend.spendableBalance)} in checking − {formatMoney(safeToSpend.essentialRemaining)} left on rent/subscriptions this month
           </div>
+          {untilPayday !== null && nextPayday && (
+            <div style={{
+              display: 'flex', alignItems: 'baseline', gap: 6, marginTop: '0.75rem', paddingTop: '0.75rem',
+              borderTop: '1px solid var(--border)', fontSize: '0.85rem', color: 'var(--text-muted)',
+            }}>
+              <span>Projected</span>
+              <span className="num" style={{ fontWeight: 700, color: untilPayday < 0 ? 'var(--red)' : 'var(--text)' }}>
+                {formatMoney(untilPayday)}
+              </span>
+              <span>
+                left right before your next paycheck ({new Date(nextPayday.date + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })}, in {nextPayday.daysUntil} day{nextPayday.daysUntil === 1 ? '' : 's'}) at your current pace
+              </span>
+            </div>
+          )}
         </div>
       )}
 

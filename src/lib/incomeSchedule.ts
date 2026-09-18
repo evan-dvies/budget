@@ -21,7 +21,13 @@ export async function getNextPayday(): Promise<NextPayday | null> {
   const schedule = rows[0];
   if (!schedule || schedule.frequency !== 'biweekly') return null;
 
-  const anchor = new Date(schedule.anchor_date);
+  // anchor_date is a DATE column, but the driver hands it back as a JS Date
+  // with a non-midnight UTC time-of-day baked in (it gets interpreted in the
+  // server process's local timezone first) -- re-stringifying to just the
+  // date and re-parsing strips that offset so the day-boundary math below
+  // isn't off by a fraction of a day, which was rounding the "next" payday
+  // down to one that already passed.
+  const anchor = new Date(new Date(schedule.anchor_date).toISOString().split('T')[0]);
   const today = new Date(new Date().toISOString().split('T')[0]); // midnight UTC today, date-only
 
   const elapsedDays = Math.floor((today.getTime() - anchor.getTime()) / DAY_MS);
