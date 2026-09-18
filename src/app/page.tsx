@@ -6,6 +6,7 @@ interface Account {
   id: string;
   name: string;
   institution: string;
+  type: string;
   currency: string;
   current_balance: string | null;
   balance_as_of: string | null;
@@ -38,6 +39,7 @@ interface Budget {
   category_name: string;
   amount: string;
   spent: string;
+  is_essential: boolean;
 }
 
 interface MonthTotals {
@@ -103,21 +105,110 @@ interface ChartSpec {
   values: number[];
 }
 
-const BG = '#0f0f0f';
-const CARD = '#1a1a1a';
-const BORDER = '#2a2a2a';
-const GREEN = '#22c55e';
-const RED = '#ef4444';
-const YELLOW = '#eab308';
-const MUTED = '#666';
+// ---- Icons (inline SVG, stroke-based, 24px grid) ----
+
+function Icon({ size = 16, children }: { size?: number; children: React.ReactNode }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      {children}
+    </svg>
+  );
+}
+const IconChevronLeft = (p: { size?: number }) => <Icon {...p}><polyline points="15 18 9 12 15 6" /></Icon>;
+const IconChevronRight = (p: { size?: number }) => <Icon {...p}><polyline points="9 18 15 12 9 6" /></Icon>;
+const IconChevronDown = (p: { size?: number }) => <Icon {...p}><polyline points="6 9 12 15 18 9" /></Icon>;
+const IconRefresh = (p: { size?: number }) => <Icon {...p}><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></Icon>;
+const IconSun = (p: { size?: number }) => <Icon {...p}><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></Icon>;
+const IconMoon = (p: { size?: number }) => <Icon {...p}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></Icon>;
+const IconAlertTriangle = (p: { size?: number }) => <Icon {...p}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></Icon>;
+const IconClock = (p: { size?: number }) => <Icon {...p}><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></Icon>;
+const IconX = (p: { size?: number }) => <Icon {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></Icon>;
+const IconSparkle = (p: { size?: number }) => <Icon {...p}><path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2z" /></Icon>;
+const IconCreditCard = (p: { size?: number }) => <Icon {...p}><rect x="1" y="4" width="22" height="16" rx="2" ry="2" /><line x1="1" y1="10" x2="23" y2="10" /></Icon>;
+const IconArrowUpRight = (p: { size?: number }) => <Icon {...p}><line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" /></Icon>;
+
+// ---- Formatting helpers (no component state needed) ----
+
+function formatMoney(amount: string | number | null, currency = 'CAD') {
+  if (amount === null) return '—';
+  const n = Number(amount);
+  const formatted = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const sign = n < 0 ? '-' : '';
+  const symbol = currency === 'USD' ? '$' : currency === 'CAD' ? 'CA$' : currency + ' ';
+  return `${sign}${symbol}${formatted}`;
+}
+
+function formatDate(dateStr: string) {
+  // posted_date comes back as a full ISO timestamp (e.g.
+  // "2026-09-06T06:00:00.000Z"), not a bare date -- format in UTC so the
+  // calendar date shown matches what's stored, regardless of the
+  // viewer's local timezone offset.
+  return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+function formatMonthLabel(ym: string | null) {
+  if (!ym) return '';
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+/** "Today" / "Yesterday" / "Sep 12" -- for grouping the transaction list by date. */
+function groupLabel(dateStr: string) {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const dUTC = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const diffDays = Math.round((todayUTC - dUTC) / 86400000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return formatDate(dateStr);
+}
+
+function budgetColor(spent: number, limit: number) {
+  const pct = limit > 0 ? spent / limit : 0;
+  if (pct >= 1) return 'var(--red)';
+  if (pct >= 0.8) return 'var(--amber)';
+  return 'var(--primary)';
+}
+
+const CHART_COLORS = ['var(--primary)', 'var(--green)', 'var(--amber)', '#a855f7', 'var(--red)', '#14b8a6', '#f97316'];
+
+const cardStyle: React.CSSProperties = { borderRadius: 16, padding: '1.5rem', marginBottom: '1rem' };
+
+function btnStyle(active: boolean): React.CSSProperties {
+  return {
+    width: '100%',
+    padding: '0.875rem',
+    borderRadius: 10,
+    border: 'none',
+    background: active ? 'var(--primary)' : 'var(--surface-2)',
+    color: active ? 'var(--primary-on)' : 'var(--text-faint)',
+    fontSize: '1rem',
+    fontWeight: 700,
+    cursor: active ? 'pointer' : 'not-allowed',
+  };
+}
+
+const iconBtnStyle = (size: number, radius = 10): React.CSSProperties => ({
+  width: size, height: size, borderRadius: radius,
+});
+
+// For an icon button nested inside an already-bordered container (e.g. the
+// month-nav pill) -- the .icon-btn class's own border/shadow would double up.
+const nestedIconBtnStyle = (size: number, radius = 8): React.CSSProperties => ({
+  width: size, height: size, borderRadius: radius, border: 'none', boxShadow: 'none', background: 'transparent',
+});
 
 export default function DashboardPage() {
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [setupToken, setSetupToken] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [status, setStatus] = useState('');
   const [showConnect, setShowConnect] = useState(false);
   const [reauth, setReauth] = useState<{ message: string; url: string } | null>(null);
+  const [reauthDismissed, setReauthDismissed] = useState(false);
+  const [staleDismissed, setStaleDismissed] = useState(false);
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -146,6 +237,21 @@ export default function DashboardPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
   const [aiResult, setAiResult] = useState<{ answer: string; chart: ChartSpec | null } | null>(null);
+
+  useEffect(() => {
+    const stored = typeof window !== 'undefined' ? window.localStorage.getItem('theme') : null;
+    if (stored === 'light' || stored === 'dark') {
+      setTheme(stored);
+    } else if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setTheme('dark');
+    }
+  }, []);
+
+  function toggleTheme() {
+    const next = theme === 'light' ? 'dark' : 'light';
+    setTheme(next);
+    window.localStorage.setItem('theme', next);
+  }
 
   async function loadDashboard(month?: string) {
     setLoadingData(true);
@@ -305,6 +411,8 @@ export default function DashboardPage() {
       if (data.ok) {
         setStatus(`Synced! ${data.added} transaction(s) imported across ${data.accounts} account(s).`);
         setReauth(data.needsReauth ? { message: data.reauthMessage, url: data.reauthUrl } : null);
+        setReauthDismissed(false);
+        setStaleDismissed(false);
         await Promise.all([loadDashboard(selectedMonth ?? undefined), loadForecast(), loadTfsa(), loadSubscriptions()]);
       } else {
         setStatus(`Sync error: ${data.error}`);
@@ -381,30 +489,6 @@ export default function DashboardPage() {
     }
   }
 
-  function formatMoney(amount: string | number | null, currency = 'CAD') {
-    if (amount === null) return '—';
-    const n = Number(amount);
-    const formatted = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const sign = n < 0 ? '-' : '';
-    const symbol = currency === 'USD' ? '$' : currency === 'CAD' ? 'CA$' : currency + ' ';
-    return `${sign}${symbol}${formatted}`;
-  }
-
-  function formatDate(dateStr: string) {
-    // posted_date comes back as a full ISO timestamp (e.g.
-    // "2026-09-06T06:00:00.000Z"), not a bare date -- format in UTC so the
-    // calendar date shown matches what's stored, regardless of the
-    // viewer's local timezone offset.
-    return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
-  }
-
-  function budgetColor(spent: number, limit: number) {
-    const pct = limit > 0 ? spent / limit : 0;
-    if (pct >= 1) return RED;
-    if (pct >= 0.8) return YELLOW;
-    return GREEN;
-  }
-
   function renderForecastChart(f: Forecast) {
     const width = 600;
     const height = 160;
@@ -419,42 +503,41 @@ export default function DashboardPage() {
     const linePath = f.days.map((d, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(d.balance).toFixed(1)}`).join(' ');
     const areaPath = `${linePath} L ${x(f.days.length - 1).toFixed(1)} ${y(0).toFixed(1)} L 0 ${y(0).toFixed(1)} Z`;
     const zeroY = y(0);
+    const lineColor = f.firstShortfall ? 'var(--red)' : 'var(--primary)';
 
     return (
       <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
         {minBal < 0 && (
-          <line x1={0} y1={zeroY} x2={width} y2={zeroY} stroke={RED} strokeWidth={1} strokeDasharray="4 3" opacity={0.6} />
+          <line x1={0} y1={zeroY} x2={width} y2={zeroY} stroke="var(--red)" strokeWidth={1} strokeDasharray="4 3" opacity={0.6} />
         )}
-        <path d={areaPath} fill={f.firstShortfall ? RED : GREEN} opacity={0.08} />
-        <path d={linePath} fill="none" stroke={f.firstShortfall ? RED : GREEN} strokeWidth={2} />
+        <path d={areaPath} fill={lineColor} opacity={0.1} />
+        <path d={linePath} fill="none" stroke={lineColor} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
         {f.days.map((d, i) => d.events.length > 0 && (
           <circle
             key={d.date}
             cx={x(i)}
             cy={y(d.balance)}
-            r={3}
-            fill={d.events[0].amount > 0 ? GREEN : YELLOW}
+            r={3.5}
+            fill={d.events[0].amount > 0 ? 'var(--green)' : 'var(--amber)'}
           />
         ))}
       </svg>
     );
   }
 
-  const CHART_COLORS = ['#22c55e', '#3b82f6', '#eab308', '#a855f7', '#ef4444', '#14b8a6', '#f97316'];
-
   function renderChart(chart: ChartSpec) {
     const max = Math.max(...chart.values, 0.01);
     if (chart.type === 'bar') {
       return (
         <div style={{ marginTop: '0.75rem' }}>
-          {chart.title && <p style={{ color: MUTED, fontSize: '0.75rem', margin: '0 0 0.6rem' }}>{chart.title}</p>}
+          {chart.title && <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: '0 0 0.6rem' }}>{chart.title}</p>}
           {chart.labels.map((label, i) => (
             <div key={label} style={{ marginBottom: '0.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: '0.25rem' }}>
-                <span style={{ color: '#ddd' }}>{label}</span>
-                <span style={{ color: '#fff', fontWeight: 600 }}>{formatMoney(chart.values[i])}</span>
+                <span style={{ color: 'var(--text)' }}>{label}</span>
+                <span className="num" style={{ color: 'var(--text)', fontWeight: 600 }}>{formatMoney(chart.values[i])}</span>
               </div>
-              <div style={{ height: 6, background: BORDER, borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ height: 6, background: 'var(--surface-2)', borderRadius: 3, overflow: 'hidden' }}>
                 <div style={{
                   height: '100%',
                   width: `${Math.max(2, (chart.values[i] / max) * 100)}%`,
@@ -484,12 +567,12 @@ export default function DashboardPage() {
           background: `conic-gradient(${stops.join(', ')})`,
         }} />
         <div style={{ flex: 1, minWidth: 140 }}>
-          {chart.title && <p style={{ color: MUTED, fontSize: '0.75rem', margin: '0 0 0.5rem' }}>{chart.title}</p>}
+          {chart.title && <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: '0 0 0.5rem' }}>{chart.title}</p>}
           {chart.labels.map((label, i) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem', fontSize: '0.78rem' }}>
               <span style={{ width: 10, height: 10, borderRadius: 3, background: CHART_COLORS[i % CHART_COLORS.length], flexShrink: 0 }} />
-              <span style={{ color: '#ddd', flex: 1 }}>{label}</span>
-              <span style={{ color: '#fff', fontWeight: 600 }}>{formatMoney(chart.values[i])}</span>
+              <span style={{ color: 'var(--text)', flex: 1 }}>{label}</span>
+              <span className="num" style={{ color: 'var(--text)', fontWeight: 600 }}>{formatMoney(chart.values[i])}</span>
             </div>
           ))}
         </div>
@@ -497,30 +580,6 @@ export default function DashboardPage() {
     );
   }
 
-  const cardStyle: React.CSSProperties = {
-    background: CARD,
-    borderRadius: 16,
-    padding: '1.25rem',
-    marginBottom: '1rem',
-  };
-
-  const btnStyle = (active: boolean, color = GREEN): React.CSSProperties => ({
-    width: '100%',
-    padding: '0.875rem',
-    borderRadius: 10,
-    border: 'none',
-    background: active ? color : '#2a2a2a',
-    color: active ? '#000' : '#555',
-    fontSize: '1rem',
-    fontWeight: 600,
-    cursor: active ? 'pointer' : 'not-allowed',
-  });
-
-  function formatMonthLabel(ym: string | null) {
-    if (!ym) return '';
-    const [y, m] = ym.split('-').map(Number);
-    return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
-  }
   const totalBudget = budgets.reduce((sum, b) => sum + Number(b.amount), 0);
   const totalSpentAgainstBudget = budgets.reduce((sum, b) => sum + Number(b.spent), 0);
 
@@ -534,8 +593,20 @@ export default function DashboardPage() {
     return Date.now() - new Date(a.balance_as_of).getTime() > STALE_HOURS * 60 * 60 * 1000;
   });
 
+  // Transactions arrive pre-sorted by posted_date desc, so consecutive rows
+  // sharing a day-label collapse into one group without re-sorting.
+  const txnGroups = transactions.reduce<{ label: string; items: Transaction[] }[]>((groups, t) => {
+    const label = groupLabel(t.posted_date);
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.items.push(t);
+    else groups.push({ label, items: [t] });
+    return groups;
+  }, []);
+
+  const isErrorStatus = /error|failed|could not|something went wrong/i.test(status);
+
   return (
-    <main className="shell" style={{ minHeight: '100vh', background: BG, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <main className="shell" data-theme={theme} style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
       <style>{`
         .shell {
           max-width: min(96vw, 1600px);
@@ -556,26 +627,114 @@ export default function DashboardPage() {
           gap: 1.5rem;
           align-items: start;
         }
+        .accounts-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+          gap: 1rem;
+        }
+        .budgets-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+          gap: 1.1rem 1.75rem;
+        }
       `}</style>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: 10, background: GREEN,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem',
-        }}>💰</div>
-        <h1 style={{ color: '#fff', fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Budget</h1>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 11, background: 'var(--primary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary-on)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 17l6-6 4 4 8-8" /><path d="M15 7h6v6" />
+            </svg>
+          </div>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.3rem', letterSpacing: '-0.01em', margin: 0, color: 'var(--text)' }}>Budget</h1>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 11, padding: 4, boxShadow: 'var(--shadow)' }}>
+            <button onClick={() => changeMonth(-1)} disabled={!selectedMonth} className="icon-btn" style={nestedIconBtnStyle(34)} aria-label="Previous month">
+              <IconChevronLeft />
+            </button>
+            <div className="num" style={{ fontWeight: 700, fontSize: '0.82rem', minWidth: 128, textAlign: 'center', color: 'var(--text)' }}>
+              {formatMonthLabel(selectedMonth)}
+            </div>
+            <button onClick={() => changeMonth(1)} disabled={!selectedMonth || selectedMonth >= currentRealMonth} className="icon-btn" style={nestedIconBtnStyle(34)} aria-label="Next month">
+              <IconChevronRight />
+            </button>
+          </div>
+
+          <button onClick={syncNow} disabled={syncing} className="card" style={{
+            display: 'flex', alignItems: 'center', gap: 9, padding: '0 16px', height: 42, borderRadius: 11,
+            fontWeight: 700, fontSize: '0.85rem', color: 'var(--text)', cursor: syncing ? 'default' : 'pointer',
+          }}>
+            <span style={{ display: 'flex', color: 'var(--text-muted)', transform: syncing ? 'rotate(360deg)' : undefined, transition: 'transform 0.6s ease' }}>
+              <IconRefresh />
+            </span>
+            {syncing ? 'Syncing…' : 'Sync now'}
+          </button>
+
+          <button onClick={toggleTheme} className="icon-btn" style={iconBtnStyle(42, 11)} aria-label="Toggle theme">
+            {theme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
+          </button>
+        </div>
       </div>
+
+      {/* Banners */}
+      {reauth && !reauthDismissed && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 12, background: 'var(--amber-soft)',
+          border: '1px solid var(--amber-border)', borderRadius: 12, padding: '0.85rem 1rem', marginBottom: 12,
+        }}>
+          <span style={{ color: 'var(--amber)', flexShrink: 0, marginTop: 1 }}><IconAlertTriangle size={19} /></span>
+          <div style={{ flex: 1, fontSize: '0.88rem', lineHeight: 1.5, color: 'var(--text)' }}>
+            <span style={{ fontWeight: 700 }}>Bank connection needs attention: </span>
+            <span style={{ color: 'var(--text-muted)' }}>{reauth.message}.</span>{' '}
+            <a href={reauth.url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700, textDecoration: 'none' }}>
+              Reconnect →
+            </a>
+          </div>
+          <button onClick={() => setReauthDismissed(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-faint)', padding: 2 }} aria-label="Dismiss">
+            <IconX size={15} />
+          </button>
+        </div>
+      )}
+
+      {(!reauth || reauthDismissed) && staleAccounts.length > 0 && !staleDismissed && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 12, background: 'var(--amber-soft)',
+          border: '1px solid var(--amber-border)', borderRadius: 12, padding: '0.85rem 1rem', marginBottom: 12,
+        }}>
+          <span style={{ color: 'var(--amber)', flexShrink: 0, marginTop: 1 }}><IconClock size={19} /></span>
+          <div style={{ flex: 1, fontSize: '0.88rem', lineHeight: 1.5, color: 'var(--text)' }}>
+            <span style={{ fontWeight: 700 }}>Bank data looks stale.</span>{' '}
+            <span style={{ color: 'var(--text-muted)' }}>
+              {staleAccounts.map((a) => a.name).join(', ')} hasn't updated since{' '}
+              {new Date(Math.min(...staleAccounts.map((a) => new Date(a.balance_as_of!).getTime()))).toLocaleString()}.
+              SimpleFIN may not have re-scraped the bank yet.
+            </span>
+          </div>
+          <button onClick={() => setStaleDismissed(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-faint)', padding: 2 }} aria-label="Dismiss">
+            <IconX size={15} />
+          </button>
+        </div>
+      )}
 
       {/* Safe to Spend hero number */}
       {safeToSpend && (
-        <div style={{ ...cardStyle, textAlign: 'center', background: '#0f1f18', border: `1px solid ${GREEN}` }}>
-          <div style={{ color: MUTED, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        <div className="card" style={{ ...cardStyle, marginBottom: '1.5rem' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
             Safe to Spend
           </div>
-          <div style={{ color: safeToSpend.amount < 0 ? RED : GREEN, fontSize: '2.5rem', fontWeight: 700, lineHeight: 1.2 }}>
+          <div className="num" style={{
+            fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '2.75rem', lineHeight: 1.15, letterSpacing: '-0.02em', marginTop: 8,
+            color: safeToSpend.amount < 0 ? 'var(--red)' : 'var(--primary-strong)',
+          }}>
             {formatMoney(safeToSpend.amount)}
           </div>
-          <div style={{ color: MUTED, fontSize: '0.75rem', marginTop: '0.25rem' }}>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.5rem' }}>
             {formatMoney(safeToSpend.spendableBalance)} in checking − {formatMoney(safeToSpend.essentialRemaining)} left on rent/subscriptions this month
           </div>
         </div>
@@ -583,62 +742,70 @@ export default function DashboardPage() {
 
       {/* Cash-flow forecast */}
       {forecast && (
-        <div style={cardStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
-            <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: 0 }}>45-Day Cash Flow</h2>
-            <span style={{ color: MUTED, fontSize: '0.75rem' }}>−{formatMoney(forecast.avgDailyBurn)}/day avg</span>
+        <div className="card" style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.6rem' }}>
+            <h2 style={{ color: 'var(--text)', fontSize: '1rem', fontWeight: 700, margin: 0 }}>45-Day Cash Flow</h2>
+            <span className="num" style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>−{formatMoney(forecast.avgDailyBurn)}/day avg</span>
           </div>
           {renderForecastChart(forecast)}
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.6rem', fontSize: '0.8rem' }}>
-            <span style={{ color: MUTED }}>
-              Lowest: <span style={{ color: forecast.lowest.balance < 0 ? RED : '#ddd', fontWeight: 600 }}>{formatMoney(forecast.lowest.balance)}</span> on {formatDate(forecast.lowest.date)}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.7rem', fontSize: '0.82rem' }}>
+            <span style={{ color: 'var(--text-muted)' }}>
+              Lowest: <span className="num" style={{ color: forecast.lowest.balance < 0 ? 'var(--red)' : 'var(--text)', fontWeight: 700 }}>{formatMoney(forecast.lowest.balance)}</span> on {formatDate(forecast.lowest.date)}
             </span>
           </div>
           {forecast.firstShortfall && (
-            <p style={{ color: RED, fontSize: '0.8rem', marginTop: '0.5rem', marginBottom: 0 }}>
-              ⚠ Projected to go negative around {formatDate(forecast.firstShortfall.date)} at this pace.
-            </p>
+            <div className="chip" style={{ background: 'var(--red-soft)', color: 'var(--red)', marginTop: '0.6rem' }}>
+              <IconAlertTriangle size={12} />
+              Projected to go negative around {formatDate(forecast.firstShortfall.date)} at this pace
+            </div>
           )}
-          <p style={{ color: MUTED, fontSize: '0.7rem', marginTop: '0.5rem', marginBottom: 0 }}>
-            Green dots = paycheck, yellow dots = rent. Everything else is smoothed from your trailing 30-day average spend — a rough projection, not a guarantee.
+          <p style={{ color: 'var(--text-faint)', fontSize: '0.72rem', marginTop: '0.6rem', marginBottom: 0 }}>
+            Green dots = paycheck, amber dots = rent. Everything else is smoothed from your trailing 30-day average spend — a rough projection, not a guarantee.
           </p>
         </div>
       )}
 
       {/* TFSA contribution room */}
-      <div style={cardStyle}>
+      <div className="card" style={cardStyle}>
         <div
           onClick={() => setShowTfsaSetup(!showTfsaSetup)}
           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
         >
-          <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: 0 }}>TFSA Contribution Room</h2>
-          <span style={{ color: MUTED, fontSize: '0.8rem' }}>{showTfsaSetup ? '−' : tfsa?.hasRoomSet ? 'Edit' : '+'}</span>
+          <h2 style={{ color: 'var(--text)', fontSize: '1rem', fontWeight: 700, margin: 0 }}>TFSA Contribution Room</h2>
+          {tfsa?.hasRoomSet && !showTfsaSetup ? (
+            <span style={{ color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 600 }}>Edit</span>
+          ) : (
+            <span style={{ color: 'var(--text-muted)', display: 'flex', transform: showTfsaSetup ? 'rotate(180deg)' : undefined }}>
+              <IconChevronDown size={16} />
+            </span>
+          )}
         </div>
 
         {tfsa?.hasRoomSet && !showTfsaSetup && (
-          <div style={{ marginTop: '0.75rem' }}>
-            <div style={{ color: tfsa.isOverContributed ? RED : GREEN, fontSize: '1.8rem', fontWeight: 700 }}>
+          <div style={{ marginTop: '0.85rem' }}>
+            <div className="num" style={{ color: tfsa.isOverContributed ? 'var(--red)' : 'var(--primary-strong)', fontSize: '1.8rem', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>
               {formatMoney(tfsa.currentRoom)}
             </div>
-            <div style={{ color: MUTED, fontSize: '0.75rem', marginTop: '0.15rem' }}>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: '0.2rem' }}>
               room remaining, estimated from {formatMoney(tfsa.asOfAmount)} as of {tfsa.asOfDate ? formatDate(tfsa.asOfDate) : ''}
             </div>
             {tfsa.isOverContributed && (
-              <p style={{ color: RED, fontSize: '0.8rem', marginTop: '0.5rem', marginBottom: 0 }}>
-                ⚠ This estimate is negative — CRA charges 1%/month on TFSA over-contributions. Double-check against CRA My Account before contributing more.
-              </p>
+              <div className="chip" style={{ background: 'var(--red-soft)', color: 'var(--red)', marginTop: '0.6rem' }}>
+                <IconAlertTriangle size={12} />
+                This estimate is negative — CRA charges 1%/month on TFSA over-contributions. Double-check against CRA My Account.
+              </div>
             )}
             {tfsa.pendingRestoration > 0 && (
-              <p style={{ color: MUTED, fontSize: '0.75rem', marginTop: '0.5rem', marginBottom: 0 }}>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: '0.6rem', marginBottom: 0 }}>
                 {formatMoney(tfsa.pendingRestoration)} withdrawn this year restores to your room on Jan 1 next year, not before.
               </p>
             )}
             {tfsa.unverifiedLimitYears.length > 0 && (
-              <p style={{ color: YELLOW, fontSize: '0.7rem', marginTop: '0.5rem', marginBottom: 0 }}>
+              <p style={{ color: 'var(--amber)', fontSize: '0.72rem', marginTop: '0.6rem', marginBottom: 0 }}>
                 Annual limit not confirmed for {tfsa.unverifiedLimitYears.join(', ')} — using a $7,000 placeholder, verify with CRA.
               </p>
             )}
-            <p style={{ color: MUTED, fontSize: '0.7rem', marginTop: '0.5rem', marginBottom: 0 }}>
+            <p style={{ color: 'var(--text-faint)', fontSize: '0.72rem', marginTop: '0.6rem', marginBottom: 0 }}>
               Planning estimate only, not tax advice — every dollar in or out of your TFSA counts here, including interest. Reconcile with CRA My Account periodically.
             </p>
           </div>
@@ -646,7 +813,7 @@ export default function DashboardPage() {
 
         {showTfsaSetup && (
           <div style={{ marginTop: '1rem' }}>
-            <p style={{ color: MUTED, fontSize: '0.8rem', margin: '0 0 0.5rem' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', margin: '0 0 0.6rem' }}>
               Enter your contribution room from CRA My Account and the date you checked it — everything since is estimated from your synced transactions.
             </p>
             <input
@@ -655,7 +822,7 @@ export default function DashboardPage() {
               onChange={(e) => setTfsaDateInput(e.target.value)}
               style={{
                 width: '100%', padding: '0.75rem 1rem', borderRadius: 10,
-                border: `1.5px solid ${BORDER}`, background: '#111', color: '#fff',
+                border: '1.5px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)',
                 fontSize: '0.9rem', boxSizing: 'border-box', marginBottom: '0.5rem', outline: 'none',
               }}
             />
@@ -668,7 +835,7 @@ export default function DashboardPage() {
               placeholder="Room amount as of that date"
               style={{
                 width: '100%', padding: '0.75rem 1rem', borderRadius: 10,
-                border: `1.5px solid ${BORDER}`, background: '#111', color: '#fff',
+                border: '1.5px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)',
                 fontSize: '0.9rem', boxSizing: 'border-box', marginBottom: '0.75rem', outline: 'none',
               }}
             />
@@ -683,7 +850,7 @@ export default function DashboardPage() {
         )}
 
         {!tfsa?.hasRoomSet && !showTfsaSetup && (
-          <p style={{ color: MUTED, fontSize: '0.8rem', margin: '0.75rem 0 0' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', margin: '0.85rem 0 0' }}>
             Set your contribution room from CRA My Account to start tracking.
           </p>
         )}
@@ -691,65 +858,69 @@ export default function DashboardPage() {
 
       {/* Subscriptions */}
       {subscriptions.length > 0 && (
-        <div style={cardStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
-            <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: 0 }}>Subscriptions</h2>
-            <span style={{ color: MUTED, fontSize: '0.75rem' }}>~{formatMoney(subsTotalMonthly)}/mo</span>
+        <div className="card" style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.6rem' }}>
+            <h2 style={{ color: 'var(--text)', fontSize: '1rem', fontWeight: 700, margin: 0 }}>Subscriptions</h2>
+            <span className="num" style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>~{formatMoney(subsTotalMonthly)}/mo</span>
           </div>
           {subscriptions.map((s) => (
             <div
               key={s.merchant}
               style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '0.6rem 0', borderBottom: `1px solid ${BORDER}`,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+                padding: '0.7rem 0', borderTop: '1px solid var(--border)',
               }}
             >
-              <div>
-                <div style={{ color: '#fff', fontSize: '0.85rem' }}>{s.merchant}</div>
-                <div style={{ color: MUTED, fontSize: '0.7rem', marginTop: '0.1rem' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: 'var(--text)', fontSize: '0.87rem', fontWeight: 600 }}>{s.merchant}</div>
+                <div style={{ color: 'var(--text-faint)', fontSize: '0.72rem', marginTop: '0.15rem' }}>
                   {s.cadence === 'irregular' ? 'not enough history yet' : s.cadence}
                   {s.source === 'pattern' ? ' · detected, not tagged as Subscription' : ''}
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ color: s.isPriceCreep ? RED : '#ddd', fontSize: '0.9rem', fontWeight: 600 }}>
-                    {formatMoney(s.lastAmount)}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
+                {s.isPriceCreep && (
+                  <div className="chip" style={{ background: 'var(--amber-soft)', color: 'var(--amber)' }}>
+                    <IconArrowUpRight size={11} />
+                    {s.priceIncreasePct !== null ? `+${s.priceIncreasePct}%` : 'up'}
                   </div>
-                  {s.priceIncreasePct !== null && (
-                    <div style={{ color: s.isPriceCreep ? RED : MUTED, fontSize: '0.7rem' }}>
-                      {s.priceIncreasePct > 0 ? '+' : ''}{s.priceIncreasePct}% vs last
-                    </div>
-                  )}
+                )}
+                <div className="num" style={{ color: 'var(--text)', fontSize: '0.92rem', fontWeight: 700, minWidth: 70, textAlign: 'right' }}>
+                  {formatMoney(s.lastAmount)}
                 </div>
                 <button
                   onClick={() => dismissSubscription(s.merchant)}
                   title="Cancelled — remove from this list"
                   style={{
-                    background: 'none', border: `1px solid ${BORDER}`, borderRadius: 6,
-                    color: MUTED, fontSize: '0.75rem', width: 22, height: 22, lineHeight: 1,
+                    background: 'none', border: '1px solid var(--border)', borderRadius: 8,
+                    color: 'var(--text-faint)', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
                     cursor: 'pointer', flexShrink: 0,
                   }}
                 >
-                  ×
+                  <IconX size={13} />
                 </button>
               </div>
             </div>
           ))}
-          <p style={{ color: MUTED, fontSize: '0.7rem', marginTop: '0.6rem', marginBottom: 0 }}>
+          <p style={{ color: 'var(--text-faint)', fontSize: '0.72rem', marginTop: '0.7rem', marginBottom: 0 }}>
             Built from your transaction history — merchants tagged "Subscriptions" always show up; other recurring monthly+ charges only show up once there's a consistent pattern. Price-creep flags need at least two charges to compare.
           </p>
         </div>
       )}
 
       {/* Ask AI */}
-      <div style={cardStyle}>
+      <div className="card" style={cardStyle}>
         <div
           onClick={() => setShowAskAI(!showAskAI)}
           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
         >
-          <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: 0 }}>✨ Ask AI</h2>
-          <span style={{ color: MUTED, fontSize: '0.8rem' }}>{showAskAI ? '−' : '+'}</span>
+          <h2 style={{ color: 'var(--text)', fontSize: '1rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ color: 'var(--primary)', display: 'flex' }}><IconSparkle size={16} /></span>
+            Ask AI
+          </h2>
+          <span style={{ color: 'var(--text-muted)', display: 'flex', transform: showAskAI ? 'rotate(180deg)' : undefined }}>
+            <IconChevronDown size={16} />
+          </span>
         </div>
 
         {showAskAI && (
@@ -765,8 +936,8 @@ export default function DashboardPage() {
                   onClick={() => askAI(p.key)}
                   disabled={aiLoading}
                   style={{
-                    padding: '0.5rem 0.85rem', borderRadius: 8, border: `1px solid ${BORDER}`,
-                    background: '#111', color: aiLoading ? '#555' : '#ddd', fontSize: '0.8rem',
+                    padding: '0.5rem 0.9rem', borderRadius: 999, border: '1px solid var(--border)',
+                    background: 'var(--surface)', color: aiLoading ? 'var(--text-faint)' : 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600,
                     cursor: aiLoading ? 'not-allowed' : 'pointer',
                   }}
                 >
@@ -783,18 +954,18 @@ export default function DashboardPage() {
                 onKeyDown={(e) => e.key === 'Enter' && askAI()}
                 placeholder="Ask about your spending..."
                 style={{
-                  flex: 1, padding: '0.65rem 0.85rem', borderRadius: 8, border: `1px solid ${BORDER}`,
-                  background: '#111', color: '#fff', fontSize: '0.85rem', boxSizing: 'border-box', outline: 'none',
+                  flex: 1, padding: '0.7rem 0.9rem', borderRadius: 10, border: '1px solid var(--border)',
+                  background: 'var(--surface-2)', color: 'var(--text)', fontSize: '0.85rem', boxSizing: 'border-box', outline: 'none',
                 }}
               />
               <button
                 onClick={() => askAI()}
                 disabled={aiLoading || !aiQuestion.trim()}
                 style={{
-                  padding: '0.65rem 1.1rem', borderRadius: 8, border: 'none',
-                  background: aiLoading || !aiQuestion.trim() ? '#2a2a2a' : GREEN,
-                  color: aiLoading || !aiQuestion.trim() ? '#555' : '#000',
-                  fontSize: '0.85rem', fontWeight: 600,
+                  padding: '0.7rem 1.1rem', borderRadius: 10, border: 'none',
+                  background: aiLoading || !aiQuestion.trim() ? 'var(--surface-2)' : 'var(--primary)',
+                  color: aiLoading || !aiQuestion.trim() ? 'var(--text-faint)' : 'var(--primary-on)',
+                  fontSize: '0.85rem', fontWeight: 700,
                   cursor: aiLoading || !aiQuestion.trim() ? 'not-allowed' : 'pointer',
                 }}
               >
@@ -802,11 +973,11 @@ export default function DashboardPage() {
               </button>
             </div>
 
-            {aiLoading && <p style={{ color: MUTED, fontSize: '0.85rem', marginTop: '0.75rem' }}>Thinking...</p>}
-            {aiError && <p style={{ color: RED, fontSize: '0.85rem', marginTop: '0.75rem' }}>{aiError}</p>}
+            {aiLoading && <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>Thinking...</p>}
+            {aiError && <p style={{ color: 'var(--red)', fontSize: '0.85rem', marginTop: '0.75rem' }}>{aiError}</p>}
             {aiResult && (
-              <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: `1px solid ${BORDER}` }}>
-                <p style={{ color: '#fff', fontSize: '0.9rem', margin: 0, lineHeight: 1.5 }}>{aiResult.answer}</p>
+              <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+                <p style={{ color: 'var(--text)', fontSize: '0.9rem', margin: 0, lineHeight: 1.5 }}>{aiResult.answer}</p>
                 {aiResult.chart && renderChart(aiResult.chart)}
               </div>
             )}
@@ -818,49 +989,24 @@ export default function DashboardPage() {
       <div>
 
       {/* Month summary */}
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-          <button
-            onClick={() => changeMonth(-1)}
-            disabled={!selectedMonth}
-            aria-label="Previous month"
-            style={{ background: 'none', border: 'none', color: MUTED, fontSize: '1.1rem', cursor: selectedMonth ? 'pointer' : 'default', padding: '0 0.5rem' }}
-          >
-            ‹
-          </button>
-          <p style={{ color: MUTED, fontSize: '0.8rem', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            {formatMonthLabel(selectedMonth)}
-          </p>
-          <button
-            onClick={() => changeMonth(1)}
-            disabled={!selectedMonth || selectedMonth >= currentRealMonth}
-            aria-label="Next month"
-            style={{
-              background: 'none', border: 'none', fontSize: '1.1rem', padding: '0 0.5rem',
-              color: (!selectedMonth || selectedMonth >= currentRealMonth) ? '#333' : MUTED,
-              cursor: (!selectedMonth || selectedMonth >= currentRealMonth) ? 'default' : 'pointer',
-            }}
-          >
-            ›
-          </button>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <div className="card" style={cardStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem 1rem' }}>
           <div>
-            <div style={{ color: MUTED, fontSize: '0.8rem' }}>Spent</div>
-            <div style={{ color: '#fff', fontSize: '1.5rem', fontWeight: 700 }}>{formatMoney(monthTotals.spent)}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Spent</div>
+            <div className="num" style={{ color: 'var(--text)', fontSize: '1.5rem', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>{formatMoney(monthTotals.spent)}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ color: MUTED, fontSize: '0.8rem' }}>Income</div>
-            <div style={{ color: GREEN, fontSize: '1.5rem', fontWeight: 700 }}>{formatMoney(monthTotals.income)}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Income</div>
+            <div className="num" style={{ color: 'var(--green)', fontSize: '1.5rem', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>{formatMoney(monthTotals.income)}</div>
           </div>
         </div>
         {totalBudget > 0 && (
-          <div style={{ marginTop: '0.75rem', color: MUTED, fontSize: '0.75rem' }}>
+          <div className="num" style={{ marginTop: '0.75rem', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
             {formatMoney(totalSpentAgainstBudget)} of {formatMoney(totalBudget)} budgeted
           </div>
         )}
         {nextPayday && selectedMonth === currentRealMonth && (
-          <div style={{ marginTop: '0.4rem', color: GREEN, fontSize: '0.75rem' }}>
+          <div className="num" style={{ marginTop: '0.4rem', color: 'var(--green)', fontSize: '0.78rem' }}>
             Next payday: {new Date(nextPayday.date + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })}
             {nextPayday.daysUntil === 0 ? ' (today)' : ` (in ${nextPayday.daysUntil} day${nextPayday.daysUntil === 1 ? '' : 's'})`}
             {' · '}{formatMoney(nextPayday.amount)}
@@ -870,74 +1016,83 @@ export default function DashboardPage() {
 
       {/* Budget progress */}
       {budgets.length > 0 && (
-        <div style={cardStyle}>
-          <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: '0 0 1rem' }}>Budgets</h2>
-          {budgets.map((b) => {
-            const spent = Number(b.spent);
-            const limit = Number(b.amount);
-            const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
-            const color = budgetColor(spent, limit);
-            const isEditing = editingBudgetId === b.category_id;
-            return (
-              <div key={b.category_id} style={{ marginBottom: '0.9rem' }}>
-                <div
-                  onClick={() => {
-                    if (isEditing) return;
-                    setEditingBudgetId(b.category_id);
-                    setBudgetInput(String(limit));
-                  }}
-                  style={{ cursor: isEditing ? 'default' : 'pointer' }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
-                    <span style={{ color: '#fff', fontSize: '0.85rem', fontWeight: 500 }}>{b.category_name}</span>
-                    <span style={{ color, fontSize: '0.8rem', fontWeight: 600 }}>
-                      {formatMoney(spent)} / {formatMoney(limit)}
-                    </span>
+        <div className="card" style={cardStyle}>
+          <h2 style={{ color: 'var(--text)', fontSize: '1rem', fontWeight: 700, margin: '0 0 1rem' }}>Budgets</h2>
+          <div className="budgets-grid">
+            {budgets.map((b) => {
+              const spent = Number(b.spent);
+              const limit = Number(b.amount);
+              const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
+              const color = budgetColor(spent, limit);
+              const isEditing = editingBudgetId === b.category_id;
+              return (
+                <div key={b.category_id}>
+                  <div
+                    onClick={() => {
+                      if (isEditing) return;
+                      setEditingBudgetId(b.category_id);
+                      setBudgetInput(String(limit));
+                    }}
+                    style={{ cursor: isEditing ? 'default' : 'pointer' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.35rem' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: 'var(--text)', fontSize: '0.85rem', fontWeight: 700 }}>{b.category_name}</span>
+                        {b.is_essential && (
+                          <span className="chip" style={{ background: 'var(--primary-soft)', color: 'var(--primary-strong)', padding: '2px 8px', fontSize: '0.62rem' }}>
+                            Essential
+                          </span>
+                        )}
+                      </span>
+                      <span className="num" style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                        {formatMoney(spent)} <span style={{ color: 'var(--text-faint)' }}>/ {formatMoney(limit)}</span>
+                      </span>
+                    </div>
+                    <div style={{ height: 7, background: 'var(--surface-2)', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 4 }} />
+                    </div>
                   </div>
-                  <div style={{ height: 6, background: BORDER, borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3 }} />
-                  </div>
+                  {isEditing && (
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <input
+                        autoFocus
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={budgetInput}
+                        onChange={(e) => setBudgetInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && saveBudgetLimit(b.category_id)}
+                        style={{
+                          flex: 1, padding: '0.5rem', borderRadius: 8, border: '1px solid var(--border)',
+                          background: 'var(--surface-2)', color: 'var(--text)', fontSize: '0.85rem', boxSizing: 'border-box',
+                        }}
+                      />
+                      <button
+                        onClick={() => saveBudgetLimit(b.category_id)}
+                        disabled={savingBudget}
+                        style={{
+                          padding: '0.5rem 0.9rem', borderRadius: 8, border: 'none',
+                          background: 'var(--primary)', color: 'var(--primary-on)', fontSize: '0.85rem', fontWeight: 700,
+                          cursor: savingBudget ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditingBudgetId(null)}
+                        style={{
+                          padding: '0.5rem 0.9rem', borderRadius: 8, border: '1px solid var(--border)',
+                          background: 'none', color: 'var(--text-muted)', fontSize: '0.85rem', cursor: 'pointer',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {isEditing && (
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                    <input
-                      autoFocus
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={budgetInput}
-                      onChange={(e) => setBudgetInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && saveBudgetLimit(b.category_id)}
-                      style={{
-                        flex: 1, padding: '0.5rem', borderRadius: 8, border: `1px solid ${BORDER}`,
-                        background: '#111', color: '#fff', fontSize: '0.85rem', boxSizing: 'border-box',
-                      }}
-                    />
-                    <button
-                      onClick={() => saveBudgetLimit(b.category_id)}
-                      disabled={savingBudget}
-                      style={{
-                        padding: '0.5rem 0.9rem', borderRadius: 8, border: 'none',
-                        background: GREEN, color: '#000', fontSize: '0.85rem', fontWeight: 600,
-                        cursor: savingBudget ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={() => setEditingBudgetId(null)}
-                      style={{
-                        padding: '0.5rem 0.9rem', borderRadius: 8, border: `1px solid ${BORDER}`,
-                        background: 'none', color: MUTED, fontSize: '0.85rem', cursor: 'pointer',
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
       </div>
@@ -945,31 +1100,37 @@ export default function DashboardPage() {
       <div>
       {/* Accounts */}
       {accounts.length > 0 && (
-        <div style={cardStyle}>
-          <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: '0 0 1rem' }}>Accounts</h2>
-          {accounts.map((a) => {
-            const balance = a.current_balance === null ? 0 : Number(a.current_balance);
-            return (
-              <div key={a.id} style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '0.6rem 0', borderBottom: `1px solid ${BORDER}`,
-              }}>
-                <div>
-                  <div style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 500 }}>{a.name}</div>
-                  <div style={{ color: MUTED, fontSize: '0.75rem' }}>{a.institution}</div>
+        <div className="card" style={cardStyle}>
+          <h2 style={{ color: 'var(--text)', fontSize: '1rem', fontWeight: 700, margin: '0 0 1rem' }}>Accounts</h2>
+          <div className="accounts-grid">
+            {accounts.map((a) => {
+              const balance = a.current_balance === null ? 0 : Number(a.current_balance);
+              // A negative balance is normal for a credit account (money
+              // owed); it's only a real warning on a depository account
+              // (an overdraft).
+              const isOverdraft = balance < 0 && a.type !== 'credit';
+              return (
+                <div key={a.id} style={{
+                  border: '1px solid var(--border)', borderRadius: 12, padding: '0.9rem 1rem',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-faint)', marginBottom: 10 }}>
+                    <IconCreditCard size={14} />
+                  </div>
+                  <div style={{ color: 'var(--text)', fontSize: '0.88rem', fontWeight: 700 }}>{a.name}</div>
+                  <div style={{ color: 'var(--text-faint)', fontSize: '0.72rem', marginTop: 1, marginBottom: 10 }}>{a.institution}</div>
+                  <div className="num" style={{ color: isOverdraft ? 'var(--red)' : 'var(--text)', fontSize: '1.05rem', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>
+                    {formatMoney(a.current_balance, a.currency)}
+                  </div>
                 </div>
-                <div style={{ color: balance < 0 ? RED : GREEN, fontSize: '0.95rem', fontWeight: 600 }}>
-                  {formatMoney(a.current_balance, a.currency)}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
 
       {!loadingData && accounts.length === 0 && (
-        <div style={cardStyle}>
-          <p style={{ color: MUTED, fontSize: '0.85rem', margin: 0, textAlign: 'center' }}>
+        <div className="card" style={cardStyle}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0, textAlign: 'center' }}>
             No accounts yet. Connect a bank below.
           </p>
         </div>
@@ -977,130 +1138,97 @@ export default function DashboardPage() {
 
       {/* Recent transactions */}
       {transactions.length > 0 && (
-        <div style={cardStyle}>
-          <h2 style={{ color: '#fff', fontSize: '1rem', fontWeight: 600, margin: '0 0 1rem' }}>Recent Transactions</h2>
-          {transactions.map((t) => {
-            const amount = Number(t.amount);
-            const isEditing = editingTxnId === t.id;
-            return (
-              <div key={t.id} style={{ borderBottom: `1px solid ${BORDER}`, padding: '0.5rem 0' }}>
-                <div
-                  onClick={() => setEditingTxnId(isEditing ? null : t.id)}
-                  style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    gap: '0.75rem', cursor: 'pointer',
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{
-                      color: '#fff', fontSize: '0.85rem', fontWeight: 500,
-                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    }}>
-                      {t.merchant_name || t.description_clean || t.description_raw}
-                      {t.pending && <span style={{ color: YELLOW, fontSize: '0.7rem', marginLeft: '0.4rem' }}>PENDING</span>}
-                    </div>
-                    <div style={{ color: MUTED, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <span>{formatDate(t.posted_date)} · {t.account_name}</span>
-                      <span style={{
-                        background: BORDER, color: t.category_name ? '#ccc' : MUTED,
-                        borderRadius: 6, padding: '0.1rem 0.4rem', fontSize: '0.68rem',
-                      }}>
-                        {t.category_name ?? 'Uncategorized'}
-                      </span>
-                    </div>
-                  </div>
-                  <div style={{ color: amount < 0 ? RED : GREEN, fontSize: '0.85rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                    {formatMoney(t.amount, t.currency)}
-                  </div>
-                </div>
-                {isEditing && (
-                  <select
-                    autoFocus
-                    defaultValue={t.category_id ?? ''}
-                    onChange={(e) => e.target.value && reassignCategory(t.id, e.target.value)}
-                    style={{
-                      marginTop: '0.5rem', width: '100%', padding: '0.5rem',
-                      borderRadius: 8, border: `1px solid ${BORDER}`, background: '#111',
-                      color: '#fff', fontSize: '0.85rem',
-                    }}
-                  >
-                    <option value="" disabled>Choose a category…</option>
-                    {categoryOptions.map((c) => (
-                      <option key={c.id} value={c.id}>{c.parent_name} &gt; {c.name}</option>
-                    ))}
-                  </select>
-                )}
+        <div className="card" style={cardStyle}>
+          <h2 style={{ color: 'var(--text)', fontSize: '1rem', fontWeight: 700, margin: '0 0 0.5rem' }}>Recent Transactions</h2>
+          {txnGroups.map((grp) => (
+            <div key={grp.label + grp.items[0].id} style={{ marginTop: '1rem' }}>
+              <div style={{ color: 'var(--text-faint)', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                {grp.label}
               </div>
-            );
-          })}
+              {grp.items.map((t) => {
+                const amount = Number(t.amount);
+                const isEditing = editingTxnId === t.id;
+                return (
+                  <div key={t.id} style={{ borderTop: '1px solid var(--border)', padding: '0.6rem 0' }}>
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem',
+                    }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{
+                          color: 'var(--text)', fontSize: '0.87rem', fontWeight: 600,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>
+                          {t.merchant_name || t.description_clean || t.description_raw}
+                          {t.pending && <span style={{ color: 'var(--amber)', fontSize: '0.68rem', marginLeft: '0.4rem', fontWeight: 700 }}>PENDING</span>}
+                        </div>
+                        <div style={{
+                          color: 'var(--text-faint)', fontSize: '0.75rem', marginTop: 3,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>
+                          {t.account_name}
+                        </div>
+                      </div>
+                      <div className="num" style={{ color: amount > 0 ? 'var(--green)' : 'var(--text)', fontSize: '0.87rem', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {formatMoney(t.amount, t.currency)}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setEditingTxnId(isEditing ? null : t.id)}
+                      className="chip"
+                      style={{
+                        background: t.category_name ? 'var(--surface-2)' : 'var(--primary-soft)',
+                        color: t.category_name ? 'var(--text-muted)' : 'var(--primary-strong)',
+                        border: 'none', cursor: 'pointer', marginTop: 8,
+                      }}
+                    >
+                      {t.category_name ?? 'Uncategorized'}
+                      <IconChevronDown size={10} />
+                    </button>
+                    {isEditing && (
+                      <select
+                        autoFocus
+                        defaultValue={t.category_id ?? ''}
+                        onChange={(e) => e.target.value && reassignCategory(t.id, e.target.value)}
+                        style={{
+                          marginTop: '0.5rem', width: '100%', padding: '0.5rem',
+                          borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface-2)',
+                          color: 'var(--text)', fontSize: '0.85rem',
+                        }}
+                      >
+                        <option value="" disabled>Choose a category…</option>
+                        {categoryOptions.map((c) => (
+                          <option key={c.id} value={c.id}>{c.parent_name} &gt; {c.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
       )}
       </div>
       </div>
-
-      {reauth && (
-        <div
-          style={{
-            background: '#3a2f0f',
-            border: `1px solid ${YELLOW}`,
-            borderRadius: '8px',
-            padding: '0.75rem 1rem',
-            margin: '0.5rem 0 1rem',
-            textAlign: 'center',
-            fontSize: '0.9rem',
-          }}
-        >
-          <span style={{ color: YELLOW }}>⚠ Bank connection needs attention: {reauth.message}.</span>{' '}
-          <a href={reauth.url} target="_blank" rel="noopener noreferrer" style={{ color: YELLOW, textDecoration: 'underline' }}>
-            Reauthenticate at SimpleFIN →
-          </a>
-        </div>
-      )}
-
-      {!reauth && staleAccounts.length > 0 && (
-        <div
-          style={{
-            background: '#3a2f0f',
-            border: `1px solid ${YELLOW}`,
-            borderRadius: '8px',
-            padding: '0.75rem 1rem',
-            margin: '0.5rem 0 1rem',
-            textAlign: 'center',
-            fontSize: '0.9rem',
-          }}
-        >
-          <span style={{ color: YELLOW }}>
-            ⚠ Bank data looks stale: {staleAccounts.map((a) => a.name).join(', ')} hasn't updated since{' '}
-            {new Date(
-              Math.min(...staleAccounts.map((a) => new Date(a.balance_as_of!).getTime())),
-            ).toLocaleString()}
-            . SimpleFIN may not have re-scraped the bank yet.
-          </span>
-        </div>
-      )}
 
       {status && (
-        <p style={{ color: GREEN, fontSize: '0.9rem', textAlign: 'center', margin: '0.5rem 0 1rem' }}>{status}</p>
+        <p style={{ color: isErrorStatus ? 'var(--red)' : 'var(--green)', fontSize: '0.9rem', textAlign: 'center', margin: '1rem 0' }}>{status}</p>
       )}
 
-      {/* Connect / sync — collapsed by default once something is connected */}
-      <div style={cardStyle}>
-        <button onClick={syncNow} disabled={syncing} style={btnStyle(!syncing, '#1e3a2f')}>
-          <span style={{ color: syncing ? '#555' : GREEN }}>{syncing ? 'Syncing...' : '↻ Sync Transactions Now'}</span>
-        </button>
-
+      {/* Connect another bank */}
+      <div className="card" style={cardStyle}>
         {!showConnect && (
           <button
             onClick={() => setShowConnect(true)}
-            style={{ background: 'none', border: 'none', color: MUTED, fontSize: '0.8rem', marginTop: '0.75rem', cursor: 'pointer', width: '100%' }}
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.85rem', cursor: 'pointer', width: '100%', fontWeight: 600 }}
           >
             + Connect another bank
           </button>
         )}
 
         {showConnect && (
-          <div style={{ marginTop: '1rem' }}>
-            <p style={{ color: MUTED, fontSize: '0.8rem', margin: '0 0 0.5rem' }}>
+          <div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', margin: '0 0 0.6rem' }}>
               Paste a SimpleFIN setup token from beta-bridge.simplefin.org
             </p>
             <input
@@ -1110,7 +1238,7 @@ export default function DashboardPage() {
               placeholder="Paste setup token..."
               style={{
                 width: '100%', padding: '0.75rem 1rem', borderRadius: 10,
-                border: `1.5px solid ${BORDER}`, background: '#111', color: '#fff',
+                border: '1.5px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)',
                 fontSize: '0.9rem', boxSizing: 'border-box', marginBottom: '0.75rem', outline: 'none',
               }}
             />

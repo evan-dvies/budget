@@ -1,0 +1,114 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: oklch(98% 0.004 250);
+  --surface: oklch(100% 0 0);
+  --surface-2: oklch(96.3% 0.006 250);
+  --border: oklch(90% 0.008 250);
+  --text: oklch(22% 0.02 255);
+  --text-muted: oklch(48% 0.018 255);
+  --text-faint: oklch(63% 0.014 255);
+  --primary: oklch(55% 0.18 258);
+  --primary-strong: oklch(42% 0.17 258);
+  --primary-soft: oklch(94% 0.035 258);
+  --primary-soft-border: oklch(85% 0.06 258);
+  --green: oklch(50% 0.135 150);
+  --green-soft: oklch(94% 0.05 150);
+  --amber: oklch(52% 0.15 55);
+  --amber-soft: oklch(95% 0.06 75);
+  --amber-border: oklch(84% 0.1 70);
+  --red: oklch(53% 0.19 25);
+  --red-soft: oklch(94% 0.05 25);
+  --shadow: 0 1px 2px oklch(20% 0.02 255 / 0.04), 0 8px 20px oklch(20% 0.02 255 / 0.06);
+  --primary-on: white;
+}
+
+[data-theme='dark'] {
+  --bg: oklch(17% 0.014 260);
+  --surface: oklch(21.5% 0.017 260);
+  --surface-2: oklch(25.5% 0.019 260);
+  --border: oklch(31% 0.02 260);
+  --text: oklch(95% 0.006 260);
+  --text-muted: oklch(72% 0.013 260);
+  --text-faint: oklch(54% 0.014 260);
+  --primary: oklch(72% 0.13 258);
+  --primary-strong: oklch(80% 0.12 258);
+  --primary-soft: oklch(29% 0.06 258);
+  --primary-soft-border: oklch(38% 0.08 258);
+  --green: oklch(74% 0.14 150);
+  --green-soft: oklch(28% 0.06 150);
+  --amber: oklch(78% 0.13 75);
+  --amber-soft: oklch(30% 0.075 75);
+  --amber-border: oklch(42% 0.1 70);
+  --red: oklch(70% 0.17 25);
+  --red-soft: oklch(30% 0.08 25);
+  --shadow: 0 1px 2px oklch(0% 0 0 / 0.35), 0 10px 26px oklch(0% 0 0 / 0.4);
+  --primary-on: oklch(15% 0.02 258);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--primary);
+}
+a:hover {
+  color: var(--primary-strong);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.icon-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.icon-btn:hover {
+  color: var(--text);
+}
+.icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+input,
+select,
+button {
+  font-family: inherit;
+}
